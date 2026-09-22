@@ -1,8 +1,9 @@
 export type Exercise = { id: string; name: string; category: string; analyzed?: boolean };
 export type PlannedExercise = { id: string; name: string; sets: number; reps: string; analyzed?: boolean };
-export type LoggedSet = { exerciseId: string; exerciseName: string; weight: number; unit: 'lb' | 'kg'; reps: number; recordedAt: string };
+export type LoggedSet = { exerciseId: string; exerciseName: string; weight: number; unit: 'lb' | 'kg'; reps: number; recordedAt: string; sessionId?: string };
 export type WorkoutLog = { date: string; completed: string[]; sets: number; entries?: LoggedSet[] };
 export type WeekPlan = Record<number, PlannedExercise[]>;
+export type SavedRoutine = { id: string; name: string; exercises: PlannedExercise[] };
 
 export const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 export const WEEK_ORDER = [1, 2, 3, 4, 5, 6, 0];
@@ -31,11 +32,11 @@ export const EXERCISES: Exercise[] = [
 
 export const INITIAL_PLAN: WeekPlan = {
   0: [],
-  1: [{ id: 'squat', name: 'Barbell Squat', sets: 3, reps: '6–8', analyzed: true }, { id: 'rdl', name: 'Romanian Deadlift', sets: 3, reps: '8–10' }],
+  1: [],
   2: [],
-  3: [{ id: 'bench', name: 'Bench Press', sets: 3, reps: '6–8' }, { id: 'row', name: 'Barbell Row', sets: 3, reps: '8–10' }],
+  3: [],
   4: [],
-  5: [{ id: 'squat', name: 'Barbell Squat', sets: 3, reps: '6–8', analyzed: true }, { id: 'ohp', name: 'Overhead Press', sets: 3, reps: '8–10' }],
+  5: [],
   6: [],
 };
 

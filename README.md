@@ -1,11 +1,11 @@
 # LiftCam
 
-LiftCam is a mobile-first workout planner with a squat camera, rep timing, a post-set voice coach, and a consistency calendar. Its bottom navigation has Workout, Calendar, and Profile tabs. Workout focuses on today's session; the repeating weekly schedule lives in Calendar.
+LiftCam is a mobile-first workout planner with a squat camera, rep timing, a post-set voice coach, and a consistency calendar. Its bottom navigation has Workout, Calendar, and Profile tabs. Workout is a simple routine launcher; the repeating weekly schedule lives in Calendar.
 
 ## What works in this MVP
 
 - Plan exercises from Monday through Sunday in Calendar, including custom exercises.
-- Start today's workout and log the weight and reps for each set. Logged days appear on the calendar.
+- Start a scheduled or saved routine and log the weight and reps for each set. With no routines yet, start a free workout and optionally save its exercises as a new routine when you finish. Logged days appear on the calendar.
 - Analyze a side-view squat set using MediaPipe Pose Landmarker in the browser.
 - Count completed reps, show ascent time per rep, and flag substantial late-set slowdown.
 - Hear a local coaching preview, or connect AWS Bedrock for generated coaching.
@@ -55,6 +55,6 @@ Expect JSON containing a `summary` string. Then open LiftCam, complete a squat s
 ## Privacy and limits
 
 - Raw camera frames stay in the browser and are not uploaded.
-- The weekly plan, set log, and calendar are saved in this browser's local storage. Clearing browser data erases them; there is no cross-device sync.
+- The weekly plan, saved routines, set log, and calendar are saved in this browser's local storage. Clearing browser data erases them; there is no cross-device sync.
 - Only numeric set measurements are sent to the coach endpoint when configured.
 - This is an early prototype. Test rep count and slowdown heuristics with manually labeled sets before claiming accuracy in a resume or using the feedback to guide training decisions.
