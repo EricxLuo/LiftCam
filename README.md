@@ -23,16 +23,9 @@ Camera access requires HTTPS or localhost. To test on a phone, deploy to Amplify
 
 ## GitHub and AWS hosting
 
-1. Create an empty GitHub repository called `LiftCam` (do not add a generated README).
-2. In this folder, run:
+The repository is [EricxLuo/LiftCam](https://github.com/EricxLuo/LiftCam). This local checkout already has `origin` set to that repository. After signing in to GitHub from your local terminal, use `git push -u origin main` for future changes.
 
-   ```bash
-   git remote add origin https://github.com/YOUR_USERNAME/LiftCam.git
-   git push -u origin main
-   ```
-
-3. In the AWS Amplify console, choose **New app → Host web app → GitHub**, select the `LiftCam` repository and `main` branch, and deploy. Amplify should detect the Vite build. If you enter settings manually, use `npm ci`, `npm run build`, and output directory `dist`.
-4. Open the HTTPS Amplify URL on your phone. Grant camera permission when prompted.
+Follow [AWS_SETUP.md](AWS_SETUP.md) for Amplify deployment, Bedrock model access, Lambda setup, and API testing.
 
 ## Connect the AI coach API
 
