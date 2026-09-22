@@ -6,3 +6,10 @@ dist/
 .DS_Store
 *.local
 *.tsbuildinfo
+*.pem
+*.key
+*.p12
+*.pfx
+*.zip
+.aws/
+credentials

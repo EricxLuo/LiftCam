@@ -3,7 +3,8 @@ import { FilesetResolver, PoseLandmarker } from '@mediapipe/tasks-vision';
 import { DAYS, EXERCISES, INITIAL_PLAN, WEEK_ORDER, loadStored, localDateKey, type PlannedExercise, type WeekPlan, type WorkoutLog } from './data';
 import { SquatTracker, jointAngle, localCoach, type SetAnalysis } from './analysis';
 
-type Tab = 'home' | 'camera' | 'plan' | 'calendar';
+type Tab = 'workout' | 'calendar' | 'profile';
+type WorkoutView = 'today' | 'plan' | 'camera';
 const today = new Date();
 
 function speak(message: string): void {
@@ -14,6 +15,12 @@ function speak(message: string): void {
   window.speechSynthesis.speak(utterance);
 }
 
+function NavIcon({ name }: { name: Tab }) {
+  if (name === 'workout') return <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M3 9v6m3-9v12m3-9v6m6-6v6m3-9v12m3-9v6M3 12h18" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" /></svg>;
+  if (name === 'calendar') return <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2.5" stroke="currentColor" strokeWidth="1.8" /><path d="M7 3v4m10-4v4M3 10h18m-13 4h2m4 0h2m-8 4h2" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" /></svg>;
+  return <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="8" r="3.5" stroke="currentColor" strokeWidth="1.8" /><path d="M4.5 20c.5-4 3.2-6 7.5-6s7 2 7.5 6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" /></svg>;
+}
+
 function Camera({ onSetComplete }: { onSetComplete: () => void }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -22,6 +29,7 @@ function Camera({ onSetComplete }: { onSetComplete: () => void }) {
   const trackerRef = useRef(new SquatTracker());
   const frameRef = useRef(0);
   const liveCountRef = useRef(0);
+  const runningRef = useRef(false);
   const [status, setStatus] = useState<'idle' | 'loading' | 'ready' | 'recording'>('idle');
   const [error, setError] = useState('');
   const [liveCount, setLiveCount] = useState(0);
@@ -29,7 +37,6 @@ function Camera({ onSetComplete }: { onSetComplete: () => void }) {
   const [coachText, setCoachText] = useState('');
   const [coachSource, setCoachSource] = useState<'ai' | 'local' | null>(null);
   const [coaching, setCoaching] = useState(false);
-  const runningRef = useRef(false);
 
   function stopCamera() {
     runningRef.current = false;
@@ -102,8 +109,8 @@ function Camera({ onSetComplete }: { onSetComplete: () => void }) {
                 const points = side.map(index => pose[index]);
                 const angle = jointAngle(points[0], points[1], points[2]);
                 trackerRef.current.update(angle, performance.now());
-                ctx.strokeStyle = '#c7ff73';
-                ctx.fillStyle = '#c7ff73';
+                ctx.strokeStyle = '#55a7ff';
+                ctx.fillStyle = '#55a7ff';
                 ctx.lineWidth = Math.max(3, canvas.width / 250);
                 ctx.beginPath();
                 points.forEach((point, index) => index === 0 ? ctx.moveTo(point.x * canvas.width, point.y * canvas.height) : ctx.lineTo(point.x * canvas.width, point.y * canvas.height));
@@ -165,40 +172,43 @@ function Camera({ onSetComplete }: { onSetComplete: () => void }) {
     }
   }
 
-  return <div className="page-grid camera-grid">
-    <section className="panel camera-panel">
-      <div className="section-heading"><div><span className="eyebrow">01 / SET ANALYSIS</span><h2>Squat camera</h2></div><span className="pill accent-pill">BETA · SQUATS ONLY</span></div>
-      <p className="muted">Place your phone to the side, with your full body visible. Start the camera, then tap Start set before you lift.</p>
+  const insight = !analysis ? '' : analysis.incompleteAttempt ? 'An incomplete attempt was observed' : analysis.proximity === 'possibly-near-failure' ? 'You may have been near failure' : analysis.proximity === 'steady' ? 'Your pace stayed steady' : 'More reps needed for a failure estimate';
+
+  return <div className="camera-layout">
+    <section className="surface camera-panel">
+      <div className="section-heading"><div><span className="eyebrow">SET ANALYSIS</span><h2>Squat camera</h2></div><span className="tag">SQUATS · BETA</span></div>
+      <p className="section-copy">Set your phone at your side so your full body is visible. LiftCam times each rep and looks for late-set slowdown.</p>
       <div className={`camera-stage ${status === 'recording' ? 'is-recording' : ''}`}>
         <video ref={videoRef} playsInline muted className={status === 'idle' ? 'hidden' : ''} />
         <canvas ref={canvasRef} className={status === 'recording' ? '' : 'hidden'} />
-        {status === 'idle' && <div className="camera-placeholder"><div className="target-mark">⌖</div><strong>Ready when you are</strong><span>Side view · full body · steady phone</span></div>}
-        {status === 'recording' && <div className="camera-overlay"><span className="record-dot" /> REC <strong>{liveCount} REPS</strong></div>}
+        {status === 'idle' && <div className="camera-placeholder"><div className="viewfinder"><span /></div><strong>Camera is off</strong><span>Side view · full body · steady phone</span></div>}
+        {status === 'recording' && <div className="camera-overlay"><span className="record-dot" /> Recording <strong>{liveCount} reps</strong></div>}
         {status === 'loading' && <div className="camera-loading">Loading camera and pose model…</div>}
       </div>
-      {error && <p className="error-message">{error}</p>}
+      {error && <p className="error-message" role="alert">{error}</p>}
       <div className="camera-actions">
-        {status === 'idle' && <button className="primary-button" onClick={openCamera}>Open camera <span>↗</span></button>}
-        {status === 'ready' && <button className="primary-button" onClick={startSet}>Start set <span>●</span></button>}
-        {status === 'recording' && <button className="primary-button danger-button" onClick={endSet}>End set <span>■</span></button>}
+        {status === 'idle' && <button className="primary-button" onClick={openCamera}>Open camera</button>}
+        {status === 'ready' && <button className="primary-button" onClick={startSet}>Start set</button>}
+        {status === 'recording' && <button className="primary-button danger-button" onClick={endSet}>End set</button>}
         {status === 'ready' && <button className="text-button" onClick={() => { stopCamera(); setStatus('idle'); }}>Close camera</button>}
       </div>
-      <div className="privacy-note"><span>◇</span> Video stays on your phone. Only rep measurements are sent to the AI coach when connected.</div>
+      <p className="privacy-note">Video stays on your device. Only rep measurements go to the coach if AWS is connected.</p>
     </section>
-    <section className="panel results-panel">
-      <div className="section-heading"><div><span className="eyebrow">02 / AFTER YOUR SET</span><h2>Coach's notes</h2></div><span className="sound-icon">◖))</span></div>
-      {!analysis ? <div className="empty-results"><div className="result-illustration">↗</div><h3>Your analysis will land here.</h3><p>Finish a set to see your rep count, pace, and a spoken recommendation for what to do next.</p></div> : <>
-        <div className="stat-grid"><div className="stat"><strong>{analysis.reps.length}</strong><span>FULL REPS</span></div><div className="stat"><strong>{analysis.slowdownPercent === null ? '—' : `${Math.max(0, analysis.slowdownPercent)}%`}</strong><span>LAST REP SLOWDOWN</span></div></div>
-        <div className="insight-label">{analysis.incompleteAttempt ? 'INCOMPLETE ATTEMPT OBSERVED' : analysis.proximity === 'possibly-near-failure' ? 'POSSIBLY NEAR FAILURE' : analysis.proximity === 'steady' ? 'PACE STAYED STEADY' : 'NOT ENOUGH DATA FOR FAILURE ESTIMATE'}</div>
-        <div className="coach-card"><span className="eyebrow">{coaching ? 'GENERATING COACHING…' : coachSource === 'ai' ? 'AI COACH · AWS BEDROCK' : 'LOCAL COACH PREVIEW'}</span><p>{coaching ? 'Reviewing your rep measurements…' : coachText}</p>{coachText && <button className="replay-button" onClick={() => speak(coachText)}>◖)) &nbsp; Play summary</button>}</div>
-        {analysis.reps.length > 0 && <div className="rep-list"><h3>Rep pace</h3>{analysis.reps.map(rep => <div key={rep.number} className="rep-row"><span>REP {String(rep.number).padStart(2, '0')}</span><div className="rep-bar"><i style={{ width: `${Math.min(100, Math.max(15, rep.ascent / Math.max(...analysis.reps.map(item => item.ascent)) * 100))}%` }} /></div><strong>{rep.ascent.toFixed(1)}s</strong></div>)}</div>}
+    <section className="surface results-panel" aria-live="polite">
+      <div className="section-heading"><div><span className="eyebrow">AFTER YOUR SET</span><h2>Coach's notes</h2></div></div>
+      {!analysis ? <div className="empty-results"><div className="empty-symbol">✦</div><h3>Make every rep count.</h3><p>Complete a set to see your pace and hear one practical suggestion for the next one.</p></div> : <>
+        <div className="stat-grid"><div className="stat"><strong>{analysis.reps.length}</strong><span>Full reps</span></div><div className="stat"><strong>{analysis.slowdownPercent === null ? '—' : `${Math.max(0, analysis.slowdownPercent)}%`}</strong><span>Late-set slowdown</span></div></div>
+        <div className="insight-label">{insight}</div>
+        <div className="coach-card"><span className="eyebrow">{coaching ? 'PREPARING YOUR SUMMARY' : coachSource === 'ai' ? 'AI COACH · AWS BEDROCK' : 'LOCAL COACH PREVIEW'}</span><p>{coaching ? 'Reviewing your rep measurements…' : coachText}</p>{coachText && <button className="text-button" onClick={() => speak(coachText)}>Play summary again</button>}</div>
+        {analysis.reps.length > 0 && <div className="rep-list"><h3>Rep pace</h3>{analysis.reps.map(rep => <div key={rep.number} className="rep-row"><span>Rep {rep.number}</span><div className="rep-bar"><i style={{ width: `${Math.min(100, Math.max(15, rep.ascent / Math.max(...analysis.reps.map(item => item.ascent)) * 100))}%` }} /></div><strong>{rep.ascent.toFixed(1)}s</strong></div>)}</div>}
       </>}
     </section>
   </div>;
 }
 
 function App() {
-  const [tab, setTab] = useState<Tab>('home');
+  const [tab, setTab] = useState<Tab>('workout');
+  const [workoutView, setWorkoutView] = useState<WorkoutView>('today');
   const [plan, setPlan] = useState<WeekPlan>(() => loadStored('liftcam-plan-v1', INITIAL_PLAN));
   const [logs, setLogs] = useState<Record<string, WorkoutLog>>(() => loadStored('liftcam-logs-v1', {}));
   const [selectedDay, setSelectedDay] = useState(today.getDay());
@@ -209,12 +219,14 @@ function App() {
   const todayExercises = plan[today.getDay()] ?? [];
   const todayLog = logs[todayKey];
   const plannedDays = WEEK_ORDER.filter(day => (plan[day] ?? []).length > 0).length;
-  const completedThisWeek = WEEK_ORDER.filter(day => {
+  const weekDates = WEEK_ORDER.map(day => {
     const offset = (today.getDay() + 6) % 7;
     const monday = new Date(today.getFullYear(), today.getMonth(), today.getDate() - offset);
-    const date = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + (day === 0 ? 6 : day - 1));
-    return Boolean(logs[localDateKey(date)]?.completed.length);
-  }).length;
+    return new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + (day === 0 ? 6 : day - 1));
+  });
+  const completedThisWeek = weekDates.filter(date => Boolean(logs[localDateKey(date)]?.completed.length)).length;
+  const loggedDays = Object.values(logs).filter(log => log.completed.length > 0).length;
+  const analyzedSets = Object.values(logs).reduce((sum, log) => sum + log.sets, 0);
 
   useEffect(() => { localStorage.setItem('liftcam-plan-v1', JSON.stringify(plan)); }, [plan]);
   useEffect(() => { localStorage.setItem('liftcam-logs-v1', JSON.stringify(logs)); }, [logs]);
@@ -240,34 +252,45 @@ function App() {
       return { ...current, [todayKey]: { ...previous, sets: previous.sets + 1, completed: previous.completed.includes('Barbell Squat') ? previous.completed : [...previous.completed, 'Barbell Squat'] } };
     });
   }
+  function showWorkout(view: WorkoutView) {
+    setTab('workout');
+    setWorkoutView(view);
+    window.scrollTo(0, 0);
+  }
+  function navigate(nextTab: Tab) {
+    setTab(nextTab);
+    window.scrollTo(0, 0);
+  }
 
   const filteredExercises = useMemo(() => EXERCISES.filter(exercise => `${exercise.name} ${exercise.category}`.toLowerCase().includes(search.toLowerCase())).slice(0, 8), [search]);
   const firstOfMonth = calendarMonth.getDay();
   const cells = Array.from({ length: firstOfMonth + new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() + 1, 0).getDate() }, (_, index) => index < firstOfMonth ? null : new Date(calendarMonth.getFullYear(), calendarMonth.getMonth(), index - firstOfMonth + 1));
 
   return <div className="app-shell">
-    <aside className="sidebar">
-      <div className="brand"><div className="brand-mark">L<span>↗</span></div><span>LiftCam<small>TRAIN WITH INTENTION</small></span></div>
-      <nav className="side-nav" aria-label="Main navigation">
-        <button className={tab === 'home' ? 'active' : ''} onClick={() => setTab('home')}><span>▦</span> Overview</button>
-        <button className={tab === 'camera' ? 'active' : ''} onClick={() => setTab('camera')}><span>◉</span> Squat camera</button>
-        <button className={tab === 'plan' ? 'active' : ''} onClick={() => setTab('plan')}><span>☷</span> Weekly plan</button>
-        <button className={tab === 'calendar' ? 'active' : ''} onClick={() => setTab('calendar')}><span>▦</span> Consistency</button>
-      </nav>
-      <div className="sidebar-bottom"><div className="sidebar-tip"><span>✦ TRAINING NOTE</span><p>Progress is built one set at a time.</p></div><div className="sidebar-footer">LIFTCAM / EARLY ACCESS</div></div>
-    </aside>
+    <header className="app-header"><div className="header-inner"><div className="brand"><span className="brand-symbol" aria-hidden="true">L</span><span>LiftCam</span></div><span className="header-date">{today.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}</span></div></header>
     <main className="main-content">
-      <header className="topbar"><span>YOUR TRAINING SPACE</span><div><span className="topbar-date">{today.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}</span><span className="avatar">LC</span></div></header>
-      {tab === 'home' && <div className="content-stack">
-        <section className="hero"><div className="hero-copy"><span className="eyebrow">YOUR NEXT REP STARTS HERE</span><h1>Train smarter.<br /><em>See the difference.</em></h1><p>Plan your week, track every session, and let LiftCam turn your squat sets into useful coaching.</p><button className="hero-button" onClick={() => setTab('camera')}>Analyze a set <span>↗</span></button></div><div className="hero-graphic"><div className="orbit orbit-one"/><div className="orbit orbit-two"/><div className="hero-glyph">L<span>↗</span></div><div className="hero-label">FOCUS ON<br/>THE NEXT REP</div></div></section>
-        <div className="overview-grid"><section className="panel today-panel"><div className="section-heading"><div><span className="eyebrow">TODAY'S GAME PLAN</span><h2>{DAYS[today.getDay()]}'s workout</h2></div><button className="small-link" onClick={() => { setSelectedDay(today.getDay()); setTab('plan'); }}>Edit plan ↗</button></div>{todayExercises.length ? todayExercises.map((exercise, index) => <button key={`${exercise.id}-${index}`} className="today-exercise" onClick={() => toggleComplete(exercise.name)}><span className={`check-circle ${todayLog?.completed.includes(exercise.name) ? 'checked' : ''}`}>{todayLog?.completed.includes(exercise.name) ? '✓' : ''}</span><span className="exercise-info"><strong>{exercise.name}</strong><small>{exercise.sets} SETS · {exercise.reps} REPS {exercise.analyzed ? '· CAMERA READY' : ''}</small></span><span className="exercise-arrow">↗</span></button>) : <div className="empty-small">No workout planned today. Head to your weekly plan to add one.</div>}</section><section className="panel consistency-panel"><span className="eyebrow">THIS WEEK</span><h2>Keep showing up.</h2><div className="big-progress"><strong>{completedThisWeek}</strong><span>/ {plannedDays || 0} planned days</span></div><div className="week-dots">{WEEK_ORDER.map(day => <div key={day}><span className={(day === today.getDay() ? 'current ' : '') + (day === today.getDay() && todayLog?.completed.length ? 'done' : '')}>{DAYS[day][0]}</span></div>)}</div><button className="small-link" onClick={() => setTab('calendar')}>View consistency calendar ↗</button></section></div>
-        <div className="notice-strip"><span className="notice-icon">◇</span><div><strong>Private by design</strong><p>Your camera footage stays on your device. Schedule and calendar are saved only in this browser.</p></div></div>
-      </div>}
-      {tab === 'camera' && <div className="content-stack"><div className="page-title"><span className="eyebrow">MOVE WITH MORE INSIGHT</span><h1>Set analysis<span>.</span></h1><p>Get the numbers from your set, then hear your next move.</p></div><Camera onSetComplete={completeAnalyzedSet} /></div>}
-      {tab === 'plan' && <div className="content-stack"><div className="page-title"><span className="eyebrow">BUILD YOUR ROUTINE</span><h1>Weekly plan<span>.</span></h1><p>A flexible plan for every day of the week. Camera analysis currently supports squats.</p></div><div className="plan-grid"><section className="panel plan-days"><span className="eyebrow">YOUR WEEK</span><div className="day-list">{WEEK_ORDER.map(day => <button key={day} className={selectedDay === day ? 'selected' : ''} onClick={() => setSelectedDay(day)}><span>{DAYS[day]}</span><small>{(plan[day] ?? []).length ? `${plan[day].length} EXERCISES` : 'REST DAY'}</small><b>↗</b></button>)}</div></section><section className="panel day-detail"><div className="section-heading"><div><span className="eyebrow">{DAYS[selectedDay].toUpperCase()} / SESSION</span><h2>{DAYS[selectedDay]} plan</h2></div><span className="pill">{(plan[selectedDay] ?? []).length} EXERCISES</span></div>{(plan[selectedDay] ?? []).length ? (plan[selectedDay] ?? []).map((exercise, index) => <div className="plan-exercise" key={`${exercise.id}-${index}`}><div><strong>{exercise.name}</strong><span>{exercise.sets} sets · {exercise.reps} reps {exercise.analyzed ? '· Camera ready' : ''}</span></div><button aria-label={`Remove ${exercise.name}`} onClick={() => removeExercise(index)}>×</button></div>) : <div className="empty-small">Rest day, or add an exercise below.</div>}<div className="add-box"><span className="eyebrow">ADD AN EXERCISE</span><input value={search} onChange={event => setSearch(event.target.value)} placeholder="Search workouts…" aria-label="Search workouts" /><div className="exercise-options">{filteredExercises.map(exercise => <button key={exercise.id} onClick={() => addExercise({ id: exercise.id, name: exercise.name, sets: 3, reps: '8–10', analyzed: exercise.analyzed })}><span>{exercise.name}<small>{exercise.category}{exercise.analyzed ? ' · CAMERA READY' : ''}</small></span><b>+</b></button>)}</div><div className="custom-row"><input value={customName} onChange={event => setCustomName(event.target.value)} placeholder="Or name a custom exercise" aria-label="Custom exercise name" /><button onClick={() => customName.trim() && addExercise({ id: `custom-${Date.now()}`, name: customName.trim(), sets: 3, reps: '8–10' })} disabled={!customName.trim()}>Add</button></div></div></section></div></div>}
-      {tab === 'calendar' && <div className="content-stack"><div className="page-title"><span className="eyebrow">EVERY DAY COUNTS</span><h1>Consistency<span>.</span></h1><p>A simple record of the days you showed up.</p></div><section className="panel calendar-panel"><div className="calendar-header"><div><span className="eyebrow">TRAINING HISTORY</span><h2>{calendarMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}</h2></div><div><button aria-label="Previous month" onClick={() => setCalendarMonth(new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() - 1, 1))}>←</button><button aria-label="Next month" onClick={() => setCalendarMonth(new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() + 1, 1))}>→</button></div></div><div className="calendar-grid">{['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => <div key={day} className="calendar-weekday">{day}</div>)}{cells.map((date, index) => date ? <div key={localDateKey(date)} className={`calendar-day ${localDateKey(date) === todayKey ? 'today' : ''} ${logs[localDateKey(date)]?.completed.length ? 'completed' : ''}`} title={logs[localDateKey(date)]?.completed.join(', ') || 'No workout logged'}><span>{date.getDate()}</span>{logs[localDateKey(date)]?.completed.length ? <i /> : null}</div> : <div key={`blank-${index}`} className="calendar-blank" />)}</div><div className="calendar-footer"><span><i className="legend-dot" /> WORKOUT COMPLETED</span><span>Tap exercises on Overview to mark today complete.</span></div></section></div>}
+      {tab === 'workout' && <>
+        <div className="page-heading"><span className="eyebrow">YOUR TRAINING SPACE</span><h1>Workout</h1><p>Show up. Move with intention. Learn from every set.</p></div>
+        <div className="segmented-control" role="tablist" aria-label="Workout sections">
+          {([['today', 'Today'], ['plan', 'Weekly plan'], ['camera', 'Camera']] as const).map(([view, label]) => <button key={view} type="button" role="tab" aria-selected={workoutView === view} className={workoutView === view ? 'selected' : ''} onClick={() => showWorkout(view)}>{label}</button>)}
+        </div>
+        {workoutView === 'today' && <div className="content-stack">
+          <section className="feature-card"><div><span className="eyebrow">LIFTCAM VISION</span><h2>A better next set<br />starts here.</h2><p>Record a squat set. See your rep pace. Hear what to focus on next.</p><button className="feature-link" onClick={() => showWorkout('camera')}>Analyze a set <span aria-hidden="true">→</span></button></div><div className="feature-orbit" aria-hidden="true"><div className="orbit-core"><span>01</span><i /></div><span className="orbit-caption">REP BY REP</span></div></section>
+          <div className="dashboard-grid">
+            <section className="surface today-panel"><div className="section-heading"><div><span className="eyebrow">TODAY'S PLAN</span><h2>{DAYS[today.getDay()]}</h2></div><button className="text-button" onClick={() => { setSelectedDay(today.getDay()); showWorkout('plan'); }}>Edit plan</button></div>
+              {todayExercises.length ? todayExercises.map((exercise, index) => <button key={`${exercise.id}-${index}`} className="today-exercise" aria-pressed={Boolean(todayLog?.completed.includes(exercise.name))} onClick={() => toggleComplete(exercise.name)}><span className={`check-circle ${todayLog?.completed.includes(exercise.name) ? 'checked' : ''}`}>{todayLog?.completed.includes(exercise.name) ? '✓' : ''}</span><span className="exercise-info"><strong>{exercise.name}</strong><small>{exercise.sets} sets · {exercise.reps} reps{exercise.analyzed ? ' · Camera ready' : ''}</small></span></button>) : <div className="empty-small">It's a rest day. Add a workout in your weekly plan whenever you're ready.</div>}
+            </section>
+            <section className="surface consistency-panel"><span className="eyebrow">THIS WEEK</span><h2>Keep your rhythm.</h2><div className="big-progress"><strong>{completedThisWeek}</strong><span>of {plannedDays} planned days</span></div><div className="week-dots">{WEEK_ORDER.map((day, index) => <div key={day}><span className={(day === today.getDay() ? 'current ' : '') + (logs[localDateKey(weekDates[index])]?.completed.length ? 'done' : '')}>{DAYS[day][0]}</span></div>)}</div><button className="text-button" onClick={() => navigate('calendar')}>View calendar <span aria-hidden="true">→</span></button></section>
+          </div>
+          <div className="subtle-note"><span className="note-symbol" aria-hidden="true">◈</span><div><strong>Private by design</strong><p>Your camera footage stays on your device. Your plan and calendar live in this browser.</p></div></div>
+        </div>}
+        {workoutView === 'plan' && <div className="content-stack"><div className="section-intro"><h2>Make the week yours.</h2><p>Add any exercise to any day. Camera analysis currently supports barbell squats.</p></div><div className="plan-layout"><section className="surface plan-days"><span className="eyebrow">SELECT A DAY</span><div className="day-list">{WEEK_ORDER.map(day => <button key={day} className={selectedDay === day ? 'selected' : ''} onClick={() => setSelectedDay(day)}><span>{DAYS[day]}</span><small>{(plan[day] ?? []).length ? `${plan[day].length} exercises` : 'Rest day'}</small></button>)}</div></section><section className="surface day-detail"><div className="section-heading"><div><span className="eyebrow">YOUR SESSION</span><h2>{DAYS[selectedDay]} plan</h2></div><span className="tag">{(plan[selectedDay] ?? []).length} exercises</span></div>{(plan[selectedDay] ?? []).length ? (plan[selectedDay] ?? []).map((exercise, index) => <div className="plan-exercise" key={`${exercise.id}-${index}`}><div><strong>{exercise.name}</strong><span>{exercise.sets} sets · {exercise.reps} reps{exercise.analyzed ? ' · Camera ready' : ''}</span></div><button aria-label={`Remove ${exercise.name}`} onClick={() => removeExercise(index)}>×</button></div>) : <div className="empty-small">Nothing planned. Leave it as a rest day or add an exercise below.</div>}<div className="add-box"><span className="eyebrow">ADD AN EXERCISE</span><input value={search} onChange={event => setSearch(event.target.value)} placeholder="Search workouts…" aria-label="Search workouts" /><div className="exercise-options">{filteredExercises.map(exercise => <button key={exercise.id} onClick={() => addExercise({ id: exercise.id, name: exercise.name, sets: 3, reps: '8–10', analyzed: exercise.analyzed })}><span>{exercise.name}<small>{exercise.category}{exercise.analyzed ? ' · Camera ready' : ''}</small></span><b>+</b></button>)}</div><div className="custom-row"><input value={customName} onChange={event => setCustomName(event.target.value)} placeholder="Or name a custom exercise" aria-label="Custom exercise name" /><button onClick={() => customName.trim() && addExercise({ id: `custom-${Date.now()}`, name: customName.trim(), sets: 3, reps: '8–10' })} disabled={!customName.trim()}>Add</button></div></div></section></div></div>}
+        {workoutView === 'camera' && <div className="content-stack"><div className="section-intro"><h2>See what your set says.</h2><p>Set your phone down, record your squats, then hear your next move.</p></div><Camera onSetComplete={completeAnalyzedSet} /></div>}
+      </>}
+      {tab === 'calendar' && <><div className="page-heading"><span className="eyebrow">YOUR CONSISTENCY</span><h1>Calendar</h1><p>A clear view of the days you showed up.</p></div><div className="content-stack"><section className="surface calendar-panel"><div className="calendar-header"><div><span className="eyebrow">TRAINING HISTORY</span><h2>{calendarMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}</h2></div><div className="calendar-controls"><button aria-label="Previous month" onClick={() => setCalendarMonth(new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() - 1, 1))}>‹</button><button aria-label="Next month" onClick={() => setCalendarMonth(new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() + 1, 1))}>›</button></div></div><div className="calendar-grid">{['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => <div key={day} className="calendar-weekday">{day}</div>)}{cells.map((date, index) => date ? <div key={localDateKey(date)} className={`calendar-day ${localDateKey(date) === todayKey ? 'today' : ''} ${logs[localDateKey(date)]?.completed.length ? 'completed' : ''}`} title={logs[localDateKey(date)]?.completed.join(', ') || 'No workout logged'}><span>{date.getDate()}</span>{logs[localDateKey(date)]?.completed.length ? <i /> : null}</div> : <div key={`blank-${index}`} className="calendar-blank" />)}</div><div className="calendar-footer"><span><i className="legend-dot" />Workout logged</span><span>Mark exercises complete on the Workout tab.</span></div></section><div className="subtle-note"><span className="note-symbol" aria-hidden="true">◈</span><div><strong>Your history is local</strong><p>Calendar entries are saved only in this browser. Clearing its data removes them.</p></div></div></div></>}
+      {tab === 'profile' && <><div className="page-heading"><span className="eyebrow">YOUR SPACE</span><h1>Profile</h1><p>Your training at a glance, without an account.</p></div><div className="content-stack profile-stack"><section className="surface profile-hero"><div className="profile-avatar" aria-hidden="true">L</div><div><span className="eyebrow">LIFTCAM PROFILE</span><h2>Keep showing up.</h2><p>No sign-in, no cloud profile. Just your plan and your progress on this device.</p></div></section><section className="surface profile-stats"><div className="section-heading"><div><span className="eyebrow">YOUR ACTIVITY</span><h2>Progress so far</h2></div></div><div className="profile-stat-grid"><div><strong>{loggedDays}</strong><span>Days logged</span></div><div><strong>{analyzedSets}</strong><span>Camera sets</span></div><div><strong>{plannedDays}</strong><span>Planned days / week</span></div></div></section><section className="surface privacy-panel"><span className="eyebrow">DATA & PRIVACY</span><h2>Built to be personal.</h2><div className="privacy-row"><strong>Camera video</strong><span>Processed on your device, never uploaded</span></div><div className="privacy-row"><strong>Plan and calendar</strong><span>Saved in this browser only</span></div><div className="privacy-row"><strong>AI coach</strong><span>{import.meta.env.VITE_COACH_API_URL ? 'Numeric rep measurements sent to your AWS endpoint' : 'Local preview until AWS is connected'}</span></div></section></div></>}
     </main>
-    <nav className="mobile-nav" aria-label="Mobile navigation"><button className={tab === 'home' ? 'active' : ''} onClick={() => setTab('home')}><span>▦</span>Home</button><button className={tab === 'camera' ? 'active' : ''} onClick={() => setTab('camera')}><span>◉</span>Camera</button><button className={tab === 'plan' ? 'active' : ''} onClick={() => setTab('plan')}><span>☷</span>Plan</button><button className={tab === 'calendar' ? 'active' : ''} onClick={() => setTab('calendar')}><span>▦</span>Calendar</button></nav>
+    <nav className="bottom-nav" aria-label="Main navigation">{([['workout', 'Workout'], ['calendar', 'Calendar'], ['profile', 'Profile']] as const).map(([name, label]) => <button key={name} className={tab === name ? 'active' : ''} aria-current={tab === name ? 'page' : undefined} onClick={() => navigate(name)}><NavIcon name={name} /><span>{label}</span></button>)}</nav>
   </div>;
 }
 

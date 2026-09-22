@@ -1,6 +1,6 @@
 # LiftCam
 
-LiftCam is a mobile-first workout planner with a squat camera, rep timing, a post-set voice coach, and a consistency calendar.
+LiftCam is a mobile-first workout planner with a squat camera, rep timing, a post-set voice coach, and a consistency calendar. Its bottom navigation has Workout, Calendar, and Profile tabs; Today, Weekly Plan, and Camera live inside Workout.
 
 ## What works in this MVP
 
@@ -9,6 +9,7 @@ LiftCam is a mobile-first workout planner with a squat camera, rep timing, a pos
 - Analyze a side-view squat set using MediaPipe Pose Landmarker in the browser.
 - Count completed reps, show ascent time per rep, and flag substantial late-set slowdown.
 - Hear a local coaching preview, or connect AWS Bedrock for generated coaching.
+- See local activity totals and a plain-language privacy summary in Profile, with no account required.
 
 Camera analysis currently supports only barbell squats. Other exercises are manually logged. A slowdown is an observable clue, not a precise estimate of reps in reserve. The rep counter has not yet been benchmarked against labeled gym videos.
 

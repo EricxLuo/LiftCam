@@ -8,7 +8,7 @@ LiftCam has two AWS pieces: Amplify hosts the React app; Lambda calls Bedrock fo
 2. Open **AWS Amplify → New app → Host web app**.
 3. Choose **GitHub**, authorize access to the `EricxLuo/LiftCam` repository, and select its `main` branch.
 4. Check the build settings: install `npm ci`, build `npm run build`, artifact directory `dist`.
-5. Choose **Save and deploy**. Wait for the build to show **Deployed** and open the HTTPS `amplifyapp.com` URL. The Overview, Plan, Calendar, and Camera pages should load.
+5. Choose **Save and deploy**. Wait for the build to show **Deployed** and open the HTTPS `amplifyapp.com` URL. Check the Workout, Calendar, and Profile tabs; Weekly Plan and Camera are inside Workout.
 
 Amplify redeploys after subsequent GitHub pushes. The camera needs an HTTPS page when used from a phone.
 
@@ -65,8 +65,8 @@ Success returns JSON with a `summary` field. Then complete a squat set in the de
 
 If it fails:
 
-- `403`: check the Lambda function URL authorization and the Lambda role's `bedrock:InvokeModel` permission.
-- `502`: inspect the function's CloudWatch Logs; the response includes an error type when Bedrock fails.
+- `403` from the Function URL: check its authorization and resource policy.
+- `502` from the Lambda response: inspect the function's CloudWatch Logs; an IAM or Bedrock model-access failure is reported here with an error type.
 - Browser CORS error: make sure the Amplify origin matches the Function URL CORS configuration and `ALLOWED_ORIGIN`.
 - Local coaching preview with no Network request: check `VITE_COACH_API_URL` in Amplify and redeploy.
 
