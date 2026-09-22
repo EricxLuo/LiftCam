@@ -1,6 +1,7 @@
 export type Exercise = { id: string; name: string; category: string; analyzed?: boolean };
 export type PlannedExercise = { id: string; name: string; sets: number; reps: string; analyzed?: boolean };
-export type WorkoutLog = { date: string; completed: string[]; sets: number };
+export type LoggedSet = { exerciseId: string; exerciseName: string; weight: number; unit: 'lb' | 'kg'; reps: number; recordedAt: string };
+export type WorkoutLog = { date: string; completed: string[]; sets: number; entries?: LoggedSet[] };
 export type WeekPlan = Record<number, PlannedExercise[]>;
 
 export const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];

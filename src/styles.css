@@ -184,6 +184,43 @@ p { line-height: 1.5; text-wrap: pretty; }
 .bottom-nav button.active { color: var(--blue); }
 .bottom-nav svg { width: 25px; height: 25px; }
 
+.workout-overview, .session-stack { max-width: 880px; }
+.today-panel .section-heading { margin-bottom: 10px; }
+.today-list { border-bottom: 1px solid var(--line); margin-bottom: 22px; }
+.today-list .today-exercise { cursor: default; }
+.today-list .today-exercise:hover .exercise-info strong { color: var(--ink); }
+.exercise-number { flex: none; width: 30px; color: var(--soft); font-size: 12px; font-weight: 650; }
+.today-list .exercise-info { margin-left: 8px; }
+.done-label { margin-left: auto; color: var(--blue); background: var(--blue-soft); border-radius: 100px; padding: 5px 9px; font-size: 11px; font-weight: 650; }
+.start-workout { min-width: 155px; }
+.back-link { display: block; border: 0; background: none; color: var(--blue); font-size: 13px; font-weight: 600; padding: 0; margin: 0 0 24px; }
+.back-link:hover { text-decoration: underline; }
+.session-heading { padding-bottom: 22px; }
+.session-heading .unit-control { margin-top: 16px; }
+.target-copy { color: var(--muted); font-size: 13px; margin: 7px 0 0; }
+.session-exercise .section-heading { margin-bottom: 12px; }
+.logged-sets { margin: 4px 0 18px; border-top: 1px solid var(--line); }
+.logged-sets > div { display: flex; justify-content: space-between; gap: 12px; padding: 11px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
+.logged-sets span { color: var(--muted); }
+.logged-sets strong { font-weight: 650; }
+.set-form { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr) auto; gap: 10px; align-items: end; }
+.set-form label { display: grid; gap: 7px; color: var(--ink); font-size: 12px; font-weight: 650; }
+.set-form .field-label { color: var(--ink); font-weight: 650; }
+.set-form .field-label small { color: var(--soft); font-size: 12px; font-weight: 500; }
+.set-form input { width: 100%; min-height: 44px; border: 1px solid #d8d8dc; border-radius: 10px; padding: 10px 12px; color: var(--ink); background: #fff; font-size: 15px; }
+.set-form input::placeholder { color: #b0b0b6; }
+.set-form .primary-button { white-space: nowrap; }
+.camera-option { margin-top: 17px; }
+.camera-hint { max-width: 690px; margin: 0; color: var(--muted); font-size: 12px; }
+.session-footer { display: flex; justify-content: flex-end; padding: 3px 2px; }
+.secondary-button { border: 1px solid #d8d8dc; background: white; color: var(--ink); border-radius: 11px; min-height: 42px; padding: 10px 16px; font-size: 13px; font-weight: 650; }
+.secondary-button:hover { background: var(--ground); }
+.unit-control { display: flex; align-items: center; gap: 5px; }
+.unit-control span { color: var(--muted); font-size: 12px; margin-right: 7px; }
+.unit-control button { border: 0; background: transparent; color: var(--muted); border-radius: 7px; min-width: 31px; min-height: 29px; font-size: 12px; font-weight: 600; }
+.unit-control button.selected { color: var(--blue); background: var(--blue-soft); }
+.calendar-footer .text-button { padding: 0; font-size: 11px; }
+
 @media (max-width: 850px) {
   .dashboard-grid, .camera-layout { grid-template-columns: 1fr; }
   .results-panel { min-height: 320px; }
@@ -227,6 +264,11 @@ p { line-height: 1.5; text-wrap: pretty; }
   .privacy-row span { text-align: left; }
   .bottom-nav { justify-content: space-around; gap: 0; }
   .bottom-nav button { flex: 1; min-width: 0; }
+  .feature-card { min-height: 265px; }
+  .today-list .today-exercise { min-height: 62px; }
+  .set-form { grid-template-columns: 1fr 1fr; }
+  .set-form .primary-button { grid-column: 1 / -1; }
+  .session-footer .secondary-button { width: 100%; }
 }
 
 @media (prefers-reduced-motion: reduce) {

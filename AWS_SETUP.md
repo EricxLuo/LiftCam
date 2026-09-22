@@ -8,7 +8,7 @@ LiftCam has two AWS pieces: Amplify hosts the React app; Lambda calls Bedrock fo
 2. Open **AWS Amplify → New app → Host web app**.
 3. Choose **GitHub**, authorize access to the `EricxLuo/LiftCam` repository, and select its `main` branch.
 4. Check the build settings: install `npm ci`, build `npm run build`, artifact directory `dist`.
-5. Choose **Save and deploy**. Wait for the build to show **Deployed** and open the HTTPS `amplifyapp.com` URL. Check the Workout, Calendar, and Profile tabs; Weekly Plan and Camera are inside Workout.
+5. Choose **Save and deploy**. Wait for the build to show **Deployed** and open the HTTPS `amplifyapp.com` URL. Check the Workout, Calendar, and Profile tabs; weekly schedule editing is in Calendar and squat analysis opens from Workout.
 
 Amplify redeploys after subsequent GitHub pushes. The camera needs an HTTPS page when used from a phone.
 
