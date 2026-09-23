@@ -1,6 +1,7 @@
 import { BedrockRuntimeClient, ConverseCommand } from '@aws-sdk/client-bedrock-runtime';
 
 const bedrock = new BedrockRuntimeClient({});
+const supportedExercises = new Set(['Barbell Squat', 'Goblet Squat', 'Leg Press', 'Romanian Deadlift', 'Lunges', 'Bench Press', 'Incline Press', 'Push-ups', 'Deadlift', 'Barbell Row', 'Lat Pulldown', 'Pull-ups', 'Overhead Press', 'Bicep Curl']);
 const headers = {
   'content-type': 'application/json',
   'access-control-allow-origin': process.env.ALLOWED_ORIGIN || '*',
@@ -19,15 +20,15 @@ export async function handler(event) {
   let data;
   try { data = JSON.parse(event.body || '{}'); } catch { return reply(400, { error: 'Invalid JSON' }); }
   const reps = data.reps;
-  if (data.exercise !== 'Barbell Squat' || !Array.isArray(reps) || reps.length > 30 || reps.some(rep => !Number.isFinite(rep.duration) || !Number.isFinite(rep.ascent) || !Number.isFinite(rep.minKneeAngle))) {
+  if (!supportedExercises.has(data.exercise) || !Array.isArray(reps) || reps.length > 30 || reps.some(rep => !Number.isFinite(rep.duration) || !Number.isFinite(rep.ascent) || !Number.isFinite(rep.minJointAngle ?? rep.minKneeAngle))) {
     return reply(400, { error: 'Invalid set measurements' });
   }
   if (!process.env.BEDROCK_MODEL_ID) return reply(503, { error: 'BEDROCK_MODEL_ID is not configured' });
 
   const metrics = {
-    exercise: 'Barbell Squat',
+    exercise: data.exercise,
     completedReps: reps.length,
-    ascentSeconds: reps.map(rep => Number(rep.ascent.toFixed(2))),
+    effortSeconds: reps.map(rep => Number(rep.ascent.toFixed(2))),
     slowdownPercent: Number.isFinite(data.slowdownPercent) ? Math.max(-100, Math.min(500, data.slowdownPercent)) : null,
     proximity: ['unknown', 'steady', 'possibly-near-failure'].includes(data.proximity) ? data.proximity : 'unknown',
     incompleteAttempt: data.incompleteAttempt === true,

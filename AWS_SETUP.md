@@ -8,7 +8,7 @@ LiftCam has two AWS pieces: Amplify hosts the React app; Lambda calls Bedrock fo
 2. Open **AWS Amplify → New app → Host web app**.
 3. Choose **GitHub**, authorize access to the `EricxLuo/LiftCam` repository, and select its `main` branch.
 4. Check the build settings: install `npm ci`, build `npm run build`, artifact directory `dist`.
-5. Choose **Save and deploy**. Wait for the build to show **Deployed** and open the HTTPS `amplifyapp.com` URL. Check the Workout, Calendar, and Profile tabs; weekly schedule editing is in Calendar and squat analysis opens from Workout.
+5. Choose **Save and deploy**. Wait for the build to show **Deployed** and open the HTTPS `amplifyapp.com` URL. Check the Workout, Calendar, and Profile tabs; create a routine and start an empty workout to find LiftCam analysis on supported exercise cards.
 
 Amplify redeploys after subsequent GitHub pushes. The camera needs an HTTPS page when used from a phone.
 
@@ -48,10 +48,10 @@ From PowerShell, replace the URL and run:
 $liftcamBody = @{
   exercise = 'Barbell Squat'
   reps = @(
-    @{ duration = 2.1; ascent = 0.7; minKneeAngle = 90 }
-    @{ duration = 2.2; ascent = 0.8; minKneeAngle = 88 }
-    @{ duration = 2.5; ascent = 1.0; minKneeAngle = 91 }
-    @{ duration = 3.0; ascent = 1.3; minKneeAngle = 93 }
+    @{ duration = 2.1; ascent = 0.7; minJointAngle = 90 }
+    @{ duration = 2.2; ascent = 0.8; minJointAngle = 88 }
+    @{ duration = 2.5; ascent = 1.0; minJointAngle = 91 }
+    @{ duration = 3.0; ascent = 1.3; minJointAngle = 93 }
   )
   slowdownPercent = 86
   proximity = 'possibly-near-failure'
@@ -70,4 +70,4 @@ If it fails:
 - Browser CORS error: make sure the Amplify origin matches the Function URL CORS configuration and `ALLOWED_ORIGIN`.
 - Local coaching preview with no Network request: check `VITE_COACH_API_URL` in Amplify and redeploy.
 
-The weekly plan and calendar remain in browser local storage. Raw camera frames are never sent to Lambda; only numeric rep measurements are included in the coach request.
+The weekly plan, routine names, workout log, and calendar remain in browser local storage. Raw camera frames are never sent to Lambda; only numeric rep measurements are included in the coach request.

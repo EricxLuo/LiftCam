@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { Camera } from './Camera';
+import { ExerciseThumb } from './ExerciseThumb';
 import { type SetAnalysis } from './analysis';
-import { DAYS, EXERCISES, INITIAL_PLAN, WEEK_ORDER, loadStored, localDateKey, type PlannedExercise, type SavedRoutine, type WeekPlan, type WorkoutLog } from './data';
+import { DAYS, EXERCISES, WEEK_ORDER, loadStored, loadWeekPlan, localDateKey, type PlannedExercise, type SavedRoutine, type WorkoutLog } from './data';
 
 type Tab = 'workout' | 'calendar' | 'profile';
-type WorkoutView = 'overview' | 'session' | 'camera' | 'finish';
+type WorkoutView = 'overview' | 'create' | 'session' | 'camera';
 type CalendarView = 'history' | 'schedule';
-type SetDraft = { weight: string; reps: string };
-type ActiveWorkout = { kind: 'scheduled'; day: number } | { kind: 'saved'; id: string } | { kind: 'free' };
+type SetDraft = { id: string; weight: string; reps: string };
+type SessionExercise = PlannedExercise & { instanceId: string; rows: SetDraft[] };
 const today = new Date();
 const exerciseCount = (count: number) => `${count} ${count === 1 ? 'exercise' : 'exercises'}`;
 
@@ -23,29 +24,26 @@ function App() {
   const [cameraReturn, setCameraReturn] = useState<'overview' | 'session'>('overview');
   const [cameraDraftKey, setCameraDraftKey] = useState<string | null>(null);
   const [calendarView, setCalendarView] = useState<CalendarView>('history');
-  const [plan, setPlan] = useState<WeekPlan>(() => loadStored('liftcam-plan-v1', INITIAL_PLAN));
+  const [plan, setPlan] = useState(loadWeekPlan);
   const [savedRoutines, setSavedRoutines] = useState<SavedRoutine[]>(() => loadStored('liftcam-routines-v1', []));
   const [logs, setLogs] = useState<Record<string, WorkoutLog>>(() => loadStored('liftcam-logs-v1', {}));
-  const [activeWorkout, setActiveWorkout] = useState<ActiveWorkout | null>(null);
+  const [activeRoutineId, setActiveRoutineId] = useState<string | null>(null);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+  const [sessionStartedAt, setSessionStartedAt] = useState<number | null>(null);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [cameraSetsInSession, setCameraSetsInSession] = useState(0);
-  const [freeExercises, setFreeExercises] = useState<PlannedExercise[]>([]);
-  const [showExercisePicker, setShowExercisePicker] = useState(true);
+  const [sessionExercises, setSessionExercises] = useState<SessionExercise[]>([]);
+  const [showExercisePicker, setShowExercisePicker] = useState(false);
+  const [sessionError, setSessionError] = useState('');
   const [routineName, setRoutineName] = useState('');
   const [selectedDay, setSelectedDay] = useState(today.getDay());
   const [search, setSearch] = useState('');
   const [customName, setCustomName] = useState('');
   const [calendarMonth, setCalendarMonth] = useState(new Date(today.getFullYear(), today.getMonth(), 1));
-  const [drafts, setDrafts] = useState<Record<string, SetDraft>>({});
   const [unit, setUnit] = useState<'lb' | 'kg'>('lb');
 
   const todayKey = localDateKey(today);
-  const scheduledRoutines = WEEK_ORDER.filter(day => (plan[day] ?? []).length > 0).map(day => ({ day, name: `${DAYS[day]} routine`, exercises: plan[day] }));
-  const routineCount = scheduledRoutines.length + savedRoutines.length;
-  const sessionExercises = activeWorkout?.kind === 'scheduled' ? plan[activeWorkout.day] ?? [] : activeWorkout?.kind === 'saved' ? savedRoutines.find(routine => routine.id === activeWorkout.id)?.exercises ?? [] : freeExercises;
-  const sessionName = activeWorkout?.kind === 'scheduled' ? `${DAYS[activeWorkout.day]} routine` : activeWorkout?.kind === 'saved' ? savedRoutines.find(routine => routine.id === activeWorkout.id)?.name ?? 'Saved routine' : 'New workout';
-  const todayLog = logs[todayKey];
-  const todayEntries = (todayLog?.entries ?? []).filter(entry => entry.sessionId === activeSessionId);
+  const sessionName = savedRoutines.find(routine => routine.id === activeRoutineId)?.name ?? 'Workout';
   const loggedDays = Object.values(logs).filter(log => log.completed.length > 0).length;
   const manualSets = Object.values(logs).reduce((sum, log) => sum + (log.entries?.length ?? 0), 0);
   const analyzedSets = Object.values(logs).reduce((sum, log) => sum + log.sets, 0);
@@ -54,34 +52,60 @@ function App() {
   useEffect(() => { localStorage.setItem('liftcam-routines-v1', JSON.stringify(savedRoutines)); }, [savedRoutines]);
   useEffect(() => { localStorage.setItem('liftcam-logs-v1', JSON.stringify(logs)); }, [logs]);
 
+  useEffect(() => {
+    if (!sessionStartedAt) return;
+    const tick = () => setElapsedSeconds(Math.floor((Date.now() - sessionStartedAt) / 1000));
+    tick();
+    const interval = window.setInterval(tick, 1000);
+    return () => window.clearInterval(interval);
+  }, [sessionStartedAt]);
+
+  const timerText = `${String(Math.floor(elapsedSeconds / 3600)).padStart(2, '0')}:${String(Math.floor(elapsedSeconds % 3600 / 60)).padStart(2, '0')}:${String(elapsedSeconds % 60).padStart(2, '0')}`;
+
   function navigate(nextTab: Tab) {
     setTab(nextTab);
     window.scrollTo(0, 0);
   }
 
-  function startWorkout(workout: ActiveWorkout) {
-    setActiveWorkout(workout);
+  function startWorkout(routineId: string) {
+    setActiveRoutineId(routineId);
     setActiveSessionId(`session-${Date.now()}`);
+    setSessionStartedAt(Date.now());
+    setElapsedSeconds(0);
     setCameraSetsInSession(0);
-    setFreeExercises([]);
+    setSessionExercises([]);
     setShowExercisePicker(true);
-    setDrafts({});
+    setSessionError('');
     setWorkoutView('session');
     window.scrollTo(0, 0);
   }
 
   function finishWorkout() {
-    setWorkoutView(activeWorkout?.kind === 'free' ? 'finish' : 'overview');
+    const rows = sessionExercises.flatMap(exercise => exercise.rows.map(row => ({ exercise, row })));
+    const partial = rows.some(({ row }) => (row.weight.trim() && !row.reps.trim()) || (!row.weight.trim() && row.reps.trim()));
+    if (partial) { setSessionError('Complete both weight and reps for each set, or leave the row blank.'); return; }
+    const completed = rows.filter(({ row }) => row.weight.trim() && row.reps.trim());
+    const invalid = completed.some(({ row }) => !Number.isFinite(Number(row.weight)) || Number(row.weight) < 0 || !Number.isInteger(Number(row.reps)) || Number(row.reps) < 1);
+    if (invalid) { setSessionError('Use a valid weight and at least one rep for each completed set.'); return; }
+    if (completed.length) {
+      setLogs(current => {
+        const previous = current[todayKey] ?? { date: todayKey, completed: [], sets: 0 };
+        const entries = completed.map(({ exercise, row }) => ({ exerciseId: exercise.id, exerciseName: exercise.name, weight: Number(row.weight), unit, reps: Number(row.reps), recordedAt: new Date().toISOString(), sessionId: activeSessionId ?? undefined }));
+        return { ...current, [todayKey]: { ...previous, completed: [...new Set([...previous.completed, ...completed.map(({ exercise }) => exercise.name)])], entries: [...(previous.entries ?? []), ...entries] } };
+      });
+    }
+    setSessionStartedAt(null);
+    setActiveRoutineId(null);
+    setWorkoutView('overview');
     window.scrollTo(0, 0);
   }
 
-  function saveFreeRoutine(event: FormEvent<HTMLFormElement>) {
+  function createRoutine(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const name = routineName.trim();
-    if (!name || freeExercises.length === 0) return;
-    setSavedRoutines(current => [...current, { id: `routine-${Date.now()}`, name, exercises: [...freeExercises] }]);
+    if (!name) return;
+    setSavedRoutines(current => [...current, { id: `routine-${Date.now()}`, name, exercises: [] }]);
     setRoutineName('');
-    setActiveWorkout(null);
     setWorkoutView('overview');
     window.scrollTo(0, 0);
   }
@@ -99,8 +123,8 @@ function App() {
     setCustomName('');
   }
 
-  function addFreeExercise(exercise: PlannedExercise) {
-    setFreeExercises(current => [...current, exercise]);
+  function addSessionExercise(exercise: PlannedExercise) {
+    setSessionExercises(current => [...current, { ...exercise, instanceId: `exercise-${Date.now()}-${Math.random()}`, rows: [{ id: `set-${Date.now()}`, weight: '', reps: '' }] }]);
     setShowExercisePicker(false);
     setSearch('');
     setCustomName('');
@@ -110,35 +134,33 @@ function App() {
     setPlan(current => ({ ...current, [selectedDay]: current[selectedDay].filter((_, i) => i !== index) }));
   }
 
-  function updateDraft(key: string, field: keyof SetDraft, value: string) {
-    setDrafts(current => ({ ...current, [key]: { weight: current[key]?.weight ?? '', reps: current[key]?.reps ?? '', [field]: value } }));
+  function updateSet(exerciseId: string, rowId: string, field: 'weight' | 'reps', value: string) {
+    setSessionExercises(current => current.map(exercise => exercise.instanceId === exerciseId ? { ...exercise, rows: exercise.rows.map(row => row.id === rowId ? { ...row, [field]: value } : row) } : exercise));
+    setSessionError('');
   }
 
-  function logSet(event: FormEvent<HTMLFormElement>, exercise: PlannedExercise, key: string) {
-    event.preventDefault();
-    const draft = drafts[key];
-    if (!draft?.weight.trim() || !draft.reps.trim()) return;
-    const weight = Number(draft.weight);
-    const reps = Number(draft.reps);
-    if (!Number.isFinite(weight) || weight < 0 || !Number.isInteger(reps) || reps < 1) return;
-    setLogs(current => {
-      const previous = current[todayKey] ?? { date: todayKey, completed: [], sets: 0 };
-      const entry = { exerciseId: exercise.id, exerciseName: exercise.name, weight, unit, reps, recordedAt: new Date().toISOString(), sessionId: activeSessionId ?? undefined };
-      return { ...current, [todayKey]: { ...previous, completed: previous.completed.includes(exercise.name) ? previous.completed : [...previous.completed, exercise.name], entries: [...(previous.entries ?? []), entry] } };
-    });
-    setDrafts(current => ({ ...current, [key]: { weight: draft.weight, reps: '' } }));
+  function addSet(exerciseId: string) {
+    setSessionExercises(current => current.map(exercise => exercise.instanceId === exerciseId ? { ...exercise, rows: [...exercise.rows, { id: `set-${Date.now()}-${Math.random()}`, weight: '', reps: '' }] } : exercise));
   }
 
   function completeAnalyzedSet(analysis: SetAnalysis) {
+    const exerciseName = sessionExercises.find(exercise => exercise.instanceId === cameraDraftKey)?.name ?? 'Workout';
     setCameraSetsInSession(current => current + 1);
     setLogs(current => {
       const previous = current[todayKey] ?? { date: todayKey, completed: [], sets: 0 };
-      return { ...current, [todayKey]: { ...previous, sets: previous.sets + 1, completed: previous.completed.includes('Barbell Squat') ? previous.completed : [...previous.completed, 'Barbell Squat'] } };
+      return { ...current, [todayKey]: { ...previous, sets: previous.sets + 1, completed: previous.completed.includes(exerciseName) ? previous.completed : [...previous.completed, exerciseName] } };
     });
-    if (cameraDraftKey) updateDraft(cameraDraftKey, 'reps', String(analysis.reps.length));
+    if (cameraDraftKey) {
+      setSessionExercises(current => current.map(exercise => {
+        if (exercise.instanceId !== cameraDraftKey) return exercise;
+        const blankIndex = exercise.rows.findIndex(row => !row.reps);
+        const rows = blankIndex >= 0 ? exercise.rows.map((row, index) => index === blankIndex ? { ...row, reps: String(analysis.reps.length) } : row) : [...exercise.rows, { id: `set-${Date.now()}`, weight: '', reps: String(analysis.reps.length) }];
+        return { ...exercise, rows };
+      }));
+    }
   }
 
-  const filteredExercises = useMemo(() => EXERCISES.filter(exercise => `${exercise.name} ${exercise.category}`.toLowerCase().includes(search.toLowerCase())).slice(0, 8), [search]);
+  const filteredExercises = useMemo(() => EXERCISES.filter(exercise => `${exercise.name} ${exercise.category}`.toLowerCase().includes(search.toLowerCase())), [search]);
   const firstOfMonth = calendarMonth.getDay();
   const cells = Array.from({ length: firstOfMonth + new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() + 1, 0).getDate() }, (_, index) => index < firstOfMonth ? null : new Date(calendarMonth.getFullYear(), calendarMonth.getMonth(), index - firstOfMonth + 1));
 
@@ -147,49 +169,37 @@ function App() {
     <main className="main-content">
       {tab === 'workout' && <>
         {workoutView === 'overview' && <>
-          <div className="page-heading"><span className="eyebrow">YOUR TRAINING</span><h1>Routines</h1><p>{routineCount ? 'Choose a routine to get started.' : 'Start with a workout. Save the routine when you finish.'}</p></div>
+          <div className="page-heading"><span className="eyebrow">YOUR TRAINING</span><h1>Routines</h1><p>{savedRoutines.length ? 'Choose a routine to get started.' : 'Your training starts here.'}</p></div>
           <div className="content-stack workout-overview routine-list">
-            {scheduledRoutines.map(({ day, name, exercises }) => <section className="surface routine-card" key={`day-${day}`}>
-              <div className="routine-icon" aria-hidden="true">{DAYS[day].slice(0, 2)}</div>
-              <div className="routine-body"><span className="eyebrow">WEEKLY ROUTINE · {DAYS[day].toUpperCase()}</span><h2>{name}</h2><p>{exerciseCount(exercises.length)} · {exercises.map(exercise => exercise.name).join(' · ')}</p><button className="primary-button" onClick={() => startWorkout({ kind: 'scheduled', day })}>Start routine</button></div>
-            </section>)}
             {savedRoutines.map(routine => <section className="surface routine-card" key={routine.id}>
               <div className="routine-icon saved" aria-hidden="true">L</div>
-              <div className="routine-body"><span className="eyebrow">SAVED ROUTINE</span><h2>{routine.name}</h2><p>{exerciseCount(routine.exercises.length)} · {routine.exercises.map(exercise => exercise.name).join(' · ')}</p><button className="primary-button" onClick={() => startWorkout({ kind: 'saved', id: routine.id })}>Start routine</button></div>
+              <div className="routine-body"><span className="eyebrow">SAVED ROUTINE</span><h2>{routine.name}</h2><p>Build each session from the exercise library.</p><button className="primary-button" onClick={() => startWorkout(routine.id)}>Start routine</button></div>
             </section>)}
-            {routineCount === 0 && <button className="new-workout-button" onClick={() => startWorkout({ kind: 'free' })}><span className="new-workout-plus" aria-hidden="true">+</span><strong>Start new workout</strong><small>Build it as you go</small></button>}
+            <button className={`new-workout-button ${savedRoutines.length ? 'compact-create' : ''}`} onClick={() => { setWorkoutView('create'); window.scrollTo(0, 0); }}><span className="new-workout-plus" aria-hidden="true">+</span><strong>Create new routine</strong><small>Name it now, add exercises during your workout</small></button>
           </div>
         </>}
+        {workoutView === 'create' && <><div className="page-heading"><button className="back-link" onClick={() => setWorkoutView('overview')}>← Routines</button><span className="eyebrow">YOUR TRAINING</span><h1>New routine</h1><p>Give your routine a name. It starts empty, ready for your exercises.</p></div><div className="content-stack finish-stack"><section className="surface save-routine-card"><form onSubmit={createRoutine}><label>Routine name<input value={routineName} onChange={event => setRoutineName(event.target.value)} placeholder="e.g. Push day" required autoFocus /></label><button className="primary-button" type="submit">Create routine</button></form></section></div></>}
         {workoutView === 'session' && <>
-          <div className="page-heading session-heading"><button className="back-link" onClick={() => { setWorkoutView('overview'); window.scrollTo(0, 0); }}>← Routines</button><span className="eyebrow">IN PROGRESS</span><h1>{sessionName}</h1><p>{todayEntries.length} {todayEntries.length === 1 ? 'set' : 'sets'} logged{cameraSetsInSession > 0 ? ` · ${cameraSetsInSession} camera ${cameraSetsInSession === 1 ? 'analysis' : 'analyses'}` : ''}</p><div className="unit-control"><span>Weight unit</span><button className={unit === 'lb' ? 'selected' : ''} onClick={() => setUnit('lb')}>lb</button><button className={unit === 'kg' ? 'selected' : ''} onClick={() => setUnit('kg')}>kg</button></div></div>
-          <div className="content-stack session-stack">
-            {activeWorkout?.kind === 'free' && <>
-              {!showExercisePicker && <button className="add-more-button" onClick={() => setShowExercisePicker(true)}>+ Add another exercise</button>}
-              {showExercisePicker && <section className="surface free-picker"><span className="eyebrow">BUILD YOUR WORKOUT</span><h2>Add an exercise</h2><input value={search} onChange={event => setSearch(event.target.value)} placeholder="Search exercises…" aria-label="Search exercises" /><div className="free-exercise-options">{filteredExercises.map(exercise => <button key={exercise.id} onClick={() => addFreeExercise({ id: exercise.id, name: exercise.name, sets: 3, reps: '8–10', analyzed: exercise.analyzed })}>{exercise.name}<span>+</span></button>)}</div><div className="custom-row"><input value={customName} onChange={event => setCustomName(event.target.value)} placeholder="Custom exercise" aria-label="Custom exercise name" /><button onClick={() => customName.trim() && addFreeExercise({ id: `custom-${Date.now()}`, name: customName.trim(), sets: 3, reps: '8–10' })} disabled={!customName.trim()}>Add</button></div></section>}
-            </>}
+          <div className="page-heading session-heading"><span className="eyebrow">WORKOUT IN PROGRESS</span><h1>{sessionName}</h1><p>{sessionExercises.length ? `${exerciseCount(sessionExercises.length)} added` : 'Start by adding an exercise.'}{cameraSetsInSession > 0 ? ` · ${cameraSetsInSession} camera ${cameraSetsInSession === 1 ? 'analysis' : 'analyses'}` : ''}</p><div className="unit-control"><span>Weight unit</span><button className={unit === 'lb' ? 'selected' : ''} onClick={() => setUnit('lb')}>lb</button><button className={unit === 'kg' ? 'selected' : ''} onClick={() => setUnit('kg')}>kg</button></div></div>
+          <div className="content-stack session-stack live-session">
+            {!showExercisePicker && <button className="add-more-button" onClick={() => setShowExercisePicker(true)}>+ Add exercise</button>}
+            {showExercisePicker && <section className="surface free-picker"><div className="picker-heading"><div><span className="eyebrow">EXERCISE LIBRARY</span><h2>Choose an exercise</h2></div><button className="picker-close" onClick={() => setShowExercisePicker(false)} aria-label="Close exercise library">×</button></div><input value={search} onChange={event => setSearch(event.target.value)} placeholder="Search all exercises…" aria-label="Search exercises" /><div className="free-exercise-options">{filteredExercises.map(exercise => <button key={exercise.id} onClick={() => addSessionExercise({ id: exercise.id, name: exercise.name, sets: 0, reps: '', analyzed: exercise.analyzed })}><ExerciseThumb id={exercise.id} name={exercise.name} /><span className="library-name"><strong>{exercise.name}</strong><small>{exercise.category}</small></span><b>+</b></button>)}{filteredExercises.length === 0 && <p className="empty-small">No matching exercises. Try another search or add your own below.</p>}</div><div className="custom-row"><input value={customName} onChange={event => setCustomName(event.target.value)} placeholder="Custom exercise" aria-label="Custom exercise name" /><button onClick={() => customName.trim() && addSessionExercise({ id: `custom-${Date.now()}`, name: customName.trim(), sets: 0, reps: '' })} disabled={!customName.trim()}>Add</button></div></section>}
             {sessionExercises.map((exercise, index) => {
-              const key = `${exercise.id}-${index}`;
-              const draft = drafts[key] ?? { weight: '', reps: '' };
-              const exerciseSets = todayEntries.filter(entry => entry.exerciseName === exercise.name);
-              return <section className="surface session-exercise" key={key}>
-                <div className="section-heading"><div><span className="eyebrow">EXERCISE {String(index + 1).padStart(2, '0')}</span><h2>{exercise.name}</h2><p className="target-copy">Target · {exercise.sets} sets of {exercise.reps} reps</p></div><span className="tag">{exerciseSets.length} logged</span></div>
-                {exerciseSets.length > 0 && <div className="logged-sets" aria-label={`Logged sets for ${exercise.name}`}>{exerciseSets.map((entry, setIndex) => <div key={`${entry.recordedAt}-${setIndex}`}><span>Set {setIndex + 1}</span><strong>{entry.weight === 0 ? 'Bodyweight' : `${entry.weight} ${entry.unit}`} × {entry.reps} reps</strong></div>)}</div>}
-                <form className="set-form" onSubmit={event => logSet(event, exercise, key)}>
-                  <label><span className="field-label">Weight <small>({unit})</small></span><input type="number" inputMode="decimal" min="0" step="0.5" required placeholder="0" value={draft.weight} onChange={event => updateDraft(key, 'weight', event.target.value)} /></label>
-                  <label>Reps<input type="number" inputMode="numeric" min="1" step="1" required placeholder="0" value={draft.reps} onChange={event => updateDraft(key, 'reps', event.target.value)} /></label>
-                  <button className="primary-button" type="submit">Log set</button>
-                </form>
-                {exercise.analyzed && <button className="text-button camera-option" onClick={() => openCamera('session', key)}>Use LiftCam vision for this set →</button>}
-                {activeWorkout?.kind === 'free' && <button className="remove-free" onClick={() => { setFreeExercises(current => current.filter((_, itemIndex) => itemIndex !== index)); setShowExercisePicker(true); }}>Remove from workout</button>}
+              return <section className="surface session-exercise" key={exercise.instanceId}>
+                <div className="exercise-card-heading"><ExerciseThumb id={exercise.id} name={exercise.name} /><div><span className="eyebrow">EXERCISE {String(index + 1).padStart(2, '0')}</span><h2>{exercise.name}</h2></div><button className="remove-exercise" onClick={() => setSessionExercises(current => current.filter(item => item.instanceId !== exercise.instanceId))} aria-label={`Remove ${exercise.name}`}>×</button></div>
+                <div className="set-table-head"><span>SET</span><span>WEIGHT ({unit})</span><span>REPS</span></div>
+                <div className="set-rows">{exercise.rows.map((row, rowIndex) => <div className="set-row" key={row.id}><span className="set-number">{rowIndex + 1}</span><input type="number" inputMode="decimal" min="0" step="0.5" placeholder="—" value={row.weight} onChange={event => updateSet(exercise.instanceId, row.id, 'weight', event.target.value)} aria-label={`${exercise.name} set ${rowIndex + 1} weight in ${unit}`} /><input type="number" inputMode="numeric" min="1" step="1" placeholder="—" value={row.reps} onChange={event => updateSet(exercise.instanceId, row.id, 'reps', event.target.value)} aria-label={`${exercise.name} set ${rowIndex + 1} reps`} /></div>)}</div>
+                <button className="add-set-button" onClick={() => addSet(exercise.instanceId)}>+ Add set</button>
+                {exercise.analyzed && <button className="text-button camera-option" onClick={() => openCamera('session', exercise.instanceId)}>Use LiftCam vision for this set →</button>}
               </section>;
             })}
-            <div className="session-footer"><button className="secondary-button" onClick={finishWorkout}>Finish workout</button></div>
           </div>
+          {sessionError && <p className="session-error" role="alert">{sessionError}</p>}
+          <div className="floating-finish"><div><span>WORKOUT TIME</span><strong>{timerText}</strong></div><button className="primary-button" onClick={finishWorkout}>Finish workout</button></div>
         </>}
-        {workoutView === 'finish' && <><div className="page-heading"><span className="eyebrow">WORKOUT FINISHED</span><h1>Nice work.</h1><p>Save these exercises so you can start the same routine next time.</p></div><div className="content-stack finish-stack"><section className="surface save-routine-card"><h2>Save as new routine</h2><p>{freeExercises.length ? `${exerciseCount(freeExercises.length)} ready to save.` : 'Add at least one exercise to save a routine.'}</p><form onSubmit={saveFreeRoutine}><label>Routine name<input value={routineName} onChange={event => setRoutineName(event.target.value)} placeholder="e.g. Upper body day" required /></label><button className="primary-button" type="submit" disabled={freeExercises.length === 0}>Save routine</button></form><button className="text-button" onClick={() => { setActiveWorkout(null); setWorkoutView('overview'); window.scrollTo(0, 0); }}>Finish without saving</button></section></div></>}
         {workoutView === 'camera' && <>
-          <div className="page-heading camera-page-heading"><button className="back-link" onClick={() => { setWorkoutView(cameraReturn); window.scrollTo(0, 0); }}>← {cameraReturn === 'session' ? 'Back to workout' : 'Workout'}</button><span className="eyebrow">LIFTCAM VISION</span><h1>Set analysis</h1><p>Record a squat set, then hear your next move.</p></div>
-          <div className="content-stack"><Camera onSetComplete={completeAnalyzedSet} />{cameraDraftKey && <p className="camera-hint">After analysis, return to your workout. The detected rep count will be ready in your set log; add your weight and save it.</p>}</div>
+          <div className="page-heading camera-page-heading"><button className="back-link" onClick={() => { setWorkoutView(cameraReturn); window.scrollTo(0, 0); }}>← Back to workout</button><span className="eyebrow">LIFTCAM VISION</span><h1>Set analysis</h1><p>Record your set, then hear your next move.</p></div>
+          <div className="content-stack"><Camera exercise={sessionExercises.find(exercise => exercise.instanceId === cameraDraftKey)?.name ?? 'Barbell Squat'} onSetComplete={completeAnalyzedSet} />{cameraDraftKey && <p className="camera-hint">After analysis, return to your workout. Detected reps will fill your last set row; add weight before finishing.</p>}</div>
         </>}
       </>}
       {tab === 'calendar' && <>

@@ -10,20 +10,20 @@ export const WEEK_ORDER = [1, 2, 3, 4, 5, 6, 0];
 
 export const EXERCISES: Exercise[] = [
   { id: 'squat', name: 'Barbell Squat', category: 'Legs', analyzed: true },
-  { id: 'goblet-squat', name: 'Goblet Squat', category: 'Legs' },
-  { id: 'leg-press', name: 'Leg Press', category: 'Legs' },
-  { id: 'rdl', name: 'Romanian Deadlift', category: 'Legs' },
-  { id: 'lunge', name: 'Lunges', category: 'Legs' },
-  { id: 'bench', name: 'Bench Press', category: 'Chest' },
-  { id: 'incline-bench', name: 'Incline Press', category: 'Chest' },
-  { id: 'pushup', name: 'Push-ups', category: 'Chest' },
-  { id: 'deadlift', name: 'Deadlift', category: 'Back' },
-  { id: 'row', name: 'Barbell Row', category: 'Back' },
-  { id: 'pulldown', name: 'Lat Pulldown', category: 'Back' },
-  { id: 'pullup', name: 'Pull-ups', category: 'Back' },
-  { id: 'ohp', name: 'Overhead Press', category: 'Shoulders' },
+  { id: 'goblet-squat', name: 'Goblet Squat', category: 'Legs', analyzed: true },
+  { id: 'leg-press', name: 'Leg Press', category: 'Legs', analyzed: true },
+  { id: 'rdl', name: 'Romanian Deadlift', category: 'Legs', analyzed: true },
+  { id: 'lunge', name: 'Lunges', category: 'Legs', analyzed: true },
+  { id: 'bench', name: 'Bench Press', category: 'Chest', analyzed: true },
+  { id: 'incline-bench', name: 'Incline Press', category: 'Chest', analyzed: true },
+  { id: 'pushup', name: 'Push-ups', category: 'Chest', analyzed: true },
+  { id: 'deadlift', name: 'Deadlift', category: 'Back', analyzed: true },
+  { id: 'row', name: 'Barbell Row', category: 'Back', analyzed: true },
+  { id: 'pulldown', name: 'Lat Pulldown', category: 'Back', analyzed: true },
+  { id: 'pullup', name: 'Pull-ups', category: 'Back', analyzed: true },
+  { id: 'ohp', name: 'Overhead Press', category: 'Shoulders', analyzed: true },
   { id: 'lateral-raise', name: 'Lateral Raise', category: 'Shoulders' },
-  { id: 'curl', name: 'Bicep Curl', category: 'Arms' },
+  { id: 'curl', name: 'Bicep Curl', category: 'Arms', analyzed: true },
   { id: 'tricep', name: 'Tricep Pushdown', category: 'Arms' },
   { id: 'plank', name: 'Plank', category: 'Core' },
   { id: 'run', name: 'Running', category: 'Cardio' },
@@ -39,6 +39,21 @@ export const INITIAL_PLAN: WeekPlan = {
   5: [],
   6: [],
 };
+
+const LEGACY_DEMO_PLAN: WeekPlan = {
+  0: [],
+  1: [{ id: 'squat', name: 'Barbell Squat', sets: 3, reps: '6–8', analyzed: true }, { id: 'rdl', name: 'Romanian Deadlift', sets: 3, reps: '8–10' }],
+  2: [],
+  3: [{ id: 'bench', name: 'Bench Press', sets: 3, reps: '6–8' }, { id: 'row', name: 'Barbell Row', sets: 3, reps: '8–10' }],
+  4: [],
+  5: [{ id: 'squat', name: 'Barbell Squat', sets: 3, reps: '6–8', analyzed: true }, { id: 'ohp', name: 'Overhead Press', sets: 3, reps: '8–10' }],
+  6: [],
+};
+
+export function loadWeekPlan(): WeekPlan {
+  const stored = loadStored('liftcam-plan-v1', INITIAL_PLAN);
+  return JSON.stringify(stored) === JSON.stringify(LEGACY_DEMO_PLAN) ? INITIAL_PLAN : stored;
+}
 
 export function localDateKey(date: Date): string {
   const year = date.getFullYear();

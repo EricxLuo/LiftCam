@@ -1,6 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { FilesetResolver, PoseLandmarker } from '@mediapipe/tasks-vision';
-import { SquatTracker, jointAngle, localCoach, type SetAnalysis } from './analysis';
+import { RepTracker, jointAngle, localCoach, type SetAnalysis } from './analysis';
+
+function movementConfig(exercise: string): { joints: number[][]; thresholds: [number, number, number, boolean]; label: string } {
+  if (['Romanian Deadlift', 'Deadlift'].includes(exercise)) return { joints: [[11, 23, 25], [12, 24, 26]], thresholds: [135, 155, 123, false], label: 'hip' };
+  if (['Barbell Squat', 'Goblet Squat', 'Leg Press', 'Lunges'].includes(exercise)) return { joints: [[23, 25, 27], [24, 26, 28]], thresholds: [137, 153, 125, false], label: 'knee' };
+  return { joints: [[11, 13, 15], [12, 14, 16]], thresholds: [125, 155, 110, ['Barbell Row', 'Lat Pulldown', 'Pull-ups', 'Bicep Curl'].includes(exercise)], label: 'elbow' };
+}
 
 function speak(message: string): void {
   if (!('speechSynthesis' in window)) return;
@@ -10,12 +16,13 @@ function speak(message: string): void {
   window.speechSynthesis.speak(utterance);
 }
 
-export function Camera({ onSetComplete }: { onSetComplete: (analysis: SetAnalysis) => void }) {
+export function Camera({ exercise, onSetComplete }: { exercise: string; onSetComplete: (analysis: SetAnalysis) => void }) {
+  const config = movementConfig(exercise);
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const landmarkerRef = useRef<PoseLandmarker | null>(null);
-  const trackerRef = useRef(new SquatTracker());
+  const trackerRef = useRef(new RepTracker(...config.thresholds));
   const frameRef = useRef(0);
   const liveCountRef = useRef(0);
   const runningRef = useRef(false);
@@ -69,7 +76,7 @@ export function Camera({ onSetComplete }: { onSetComplete: (analysis: SetAnalysi
   }
 
   function startSet() {
-    trackerRef.current = new SquatTracker();
+    trackerRef.current = new RepTracker(...config.thresholds);
     liveCountRef.current = 0;
     setLiveCount(0);
     setAnalysis(null);
@@ -92,7 +99,7 @@ export function Camera({ onSetComplete }: { onSetComplete: (analysis: SetAnalysi
           if (ctx) {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             if (pose) {
-              const sides = [[23, 25, 27], [24, 26, 28]];
+              const sides = config.joints;
               const side = sides.sort((a, b) => b.reduce((sum, index) => sum + (pose[index]?.visibility ?? 0), 0) - a.reduce((sum, index) => sum + (pose[index]?.visibility ?? 0), 0))[0];
               if (side.every(index => (pose[index]?.visibility ?? 0) > 0.55)) {
                 const points = side.map(index => pose[index]);
@@ -131,7 +138,7 @@ export function Camera({ onSetComplete }: { onSetComplete: (analysis: SetAnalysi
     setStatus('idle');
     setAnalysis(result);
     if (result.reps.length > 0) onSetComplete(result);
-    const fallback = localCoach(result);
+    const fallback = localCoach(result, exercise);
     const endpoint = import.meta.env.VITE_COACH_API_URL?.trim();
     if (!endpoint) {
       setCoachSource('local');
@@ -144,7 +151,7 @@ export function Camera({ onSetComplete }: { onSetComplete: (analysis: SetAnalysi
       const response = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ exercise: 'Barbell Squat', reps: result.reps.map(rep => ({ duration: Number(rep.duration.toFixed(2)), ascent: Number(rep.ascent.toFixed(2)), minKneeAngle: rep.minKneeAngle })), slowdownPercent: result.slowdownPercent, proximity: result.proximity, incompleteAttempt: result.incompleteAttempt }),
+        body: JSON.stringify({ exercise, reps: result.reps.map(rep => ({ duration: Number(rep.duration.toFixed(2)), ascent: Number(rep.ascent.toFixed(2)), minJointAngle: rep.minJointAngle })), slowdownPercent: result.slowdownPercent, proximity: result.proximity, incompleteAttempt: result.incompleteAttempt }),
       });
       if (!response.ok) throw new Error(`Coach API returned ${response.status}`);
       const body = await response.json() as { summary?: string };
@@ -165,8 +172,8 @@ export function Camera({ onSetComplete }: { onSetComplete: (analysis: SetAnalysi
 
   return <div className="camera-layout">
     <section className="surface camera-panel">
-      <div className="section-heading"><div><span className="eyebrow">SET ANALYSIS</span><h2>Squat camera</h2></div><span className="tag">SQUATS · BETA</span></div>
-      <p className="section-copy">Set your phone at your side so your full body is visible. LiftCam times each rep and looks for late-set slowdown.</p>
+      <div className="section-heading"><div><span className="eyebrow">SET ANALYSIS</span><h2>{exercise} camera</h2></div><span className="tag">{config.label.toUpperCase()} TRACKING · BETA</span></div>
+      <p className="section-copy">Set your phone at your side so your working joints are visible. LiftCam times each rep and looks for late-set slowdown. Estimates are experimental, not proof of failure.</p>
       <div className={`camera-stage ${status === 'recording' ? 'is-recording' : ''}`}>
         <video ref={videoRef} playsInline muted className={status === 'idle' ? 'hidden' : ''} />
         <canvas ref={canvasRef} className={status === 'recording' ? '' : 'hidden'} />

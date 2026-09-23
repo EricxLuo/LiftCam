@@ -1,18 +1,18 @@
 # LiftCam
 
-LiftCam is a mobile-first workout planner with a squat camera, rep timing, a post-set voice coach, and a consistency calendar. Its bottom navigation has Workout, Calendar, and Profile tabs. Workout is a simple routine launcher; the repeating weekly schedule lives in Calendar.
+LiftCam is a mobile-first workout tracker with optional camera rep timing, a post-set voice coach, and a consistency calendar. Its bottom navigation has Workout, Calendar, and Profile tabs. Workout starts with no routines; the repeating weekly schedule lives in Calendar.
 
 ## What works in this MVP
 
 - Plan exercises from Monday through Sunday in Calendar, including custom exercises.
-- Start a scheduled or saved routine and log the weight and reps for each set. With no routines yet, start a free workout and optionally save its exercises as a new routine when you finish. Logged days appear on the calendar.
-- Analyze a side-view squat set using MediaPipe Pose Landmarker in the browser.
-- Count completed reps, show ascent time per rep, and flag substantial late-set slowdown.
+- Create named routines, then start an empty session. Search the exercise library, add exercise cards, and add as many weight/reps rows as you need. A running timer and Finish button float above the bottom tabs. Logged days appear on the calendar.
+- Analyze supported side-view movements using MediaPipe Pose Landmarker in the browser.
+- Count completed reps, show effort-phase time per rep, and flag substantial late-set slowdown.
 - Hear a local coaching preview, or connect AWS Bedrock for generated coaching.
-- Optionally use LiftCam vision during a squat set; its detected rep count fills the set form when you return.
+- Optionally use LiftCam vision during a supported exercise; its detected rep count fills a set row when you return.
 - See local activity totals and a plain-language privacy summary in Profile, with no account required.
 
-Camera analysis currently supports only barbell squats. Other exercises are manually logged. A slowdown is an observable clue, not a precise estimate of reps in reserve. The rep counter has not yet been benchmarked against labeled gym videos.
+Camera analysis is available for squats, lunges, leg press, deadlifts, presses, rows, pulldowns, pull-ups, push-ups, and curls. It tracks a visible knee, hip, or elbow angle with a simple repetition heuristic; the other exercises are manually logged. Camera position and occlusion can make counts inaccurate. A slowdown is an observable clue, not proof of failure or a precise estimate of reps in reserve. The rep counter has not yet been benchmarked against labeled gym videos.
 
 ## Run in VS Code
 
@@ -47,7 +47,7 @@ No AWS API key belongs in the browser. Lambda uses its IAM execution role to inv
 In a terminal, replace the URL and run:
 
 ```bash
-curl -X POST "https://YOUR_FUNCTION_URL/" -H "Content-Type: application/json" -d '{"exercise":"Barbell Squat","reps":[{"duration":2.1,"ascent":0.7,"minKneeAngle":90},{"duration":2.2,"ascent":0.8,"minKneeAngle":88},{"duration":2.5,"ascent":1.0,"minKneeAngle":91},{"duration":3.0,"ascent":1.3,"minKneeAngle":93}],"slowdownPercent":86,"proximity":"possibly-near-failure","incompleteAttempt":false}'
+curl -X POST "https://YOUR_FUNCTION_URL/" -H "Content-Type: application/json" -d '{"exercise":"Barbell Squat","reps":[{"duration":2.1,"ascent":0.7,"minJointAngle":90},{"duration":2.2,"ascent":0.8,"minJointAngle":88},{"duration":2.5,"ascent":1.0,"minJointAngle":91},{"duration":3.0,"ascent":1.3,"minJointAngle":93}],"slowdownPercent":86,"proximity":"possibly-near-failure","incompleteAttempt":false}'
 ```
 
 Expect JSON containing a `summary` string. Then open LiftCam, complete a squat set, and check the label above the response: **AI coach · AWS Bedrock** confirms the API worked. **Local coach preview** means no URL is configured or the request failed. In that case, inspect the browser Network tab and the Lambda CloudWatch logs.
@@ -55,6 +55,6 @@ Expect JSON containing a `summary` string. Then open LiftCam, complete a squat s
 ## Privacy and limits
 
 - Raw camera frames stay in the browser and are not uploaded.
-- The weekly plan, saved routines, set log, and calendar are saved in this browser's local storage. Clearing browser data erases them; there is no cross-device sync.
+- The weekly plan, saved routine names, set log, and calendar are saved in this browser's local storage. Clearing browser data erases them; there is no cross-device sync. A routine is a named launcher; each session starts empty so you choose its exercises each time.
 - Only numeric set measurements are sent to the coach endpoint when configured.
 - This is an early prototype. Test rep count and slowdown heuristics with manually labeled sets before claiming accuracy in a resume or using the feedback to guide training decisions.
