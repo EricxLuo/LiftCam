@@ -3,7 +3,9 @@ export type PlannedExercise = { id: string; name: string; sets: number; reps: st
 export type LoggedSet = { exerciseId: string; exerciseName: string; weight: number; unit: 'lb' | 'kg'; reps: number; recordedAt: string; sessionId?: string };
 export type WorkoutLog = { date: string; completed: string[]; sets: number; entries?: LoggedSet[] };
 export type WeekPlan = Record<number, PlannedExercise[]>;
-export type SavedRoutine = { id: string; name: string; exercises: PlannedExercise[] };
+export type RoutineSet = { weight: number; reps: number; unit: 'lb' | 'kg' };
+export type RoutineTemplateExercise = { id: string; name: string; analyzed?: boolean; sets: RoutineSet[] };
+export type SavedRoutine = { id: string; name: string; exercises: PlannedExercise[]; template?: RoutineTemplateExercise[] };
 
 export const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 export const WEEK_ORDER = [1, 2, 3, 4, 5, 6, 0];

@@ -2,15 +2,19 @@ import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { Camera } from './Camera';
 import { ExerciseThumb } from './ExerciseThumb';
 import { type SetAnalysis } from './analysis';
-import { DAYS, EXERCISES, WEEK_ORDER, loadStored, loadWeekPlan, localDateKey, type PlannedExercise, type SavedRoutine, type WorkoutLog } from './data';
+import { DAYS, EXERCISES, WEEK_ORDER, loadStored, loadWeekPlan, localDateKey, type PlannedExercise, type RoutineSet, type RoutineTemplateExercise, type SavedRoutine, type WorkoutLog } from './data';
 
 type Tab = 'workout' | 'calendar' | 'profile';
-type WorkoutView = 'overview' | 'create' | 'session' | 'camera';
+type WorkoutView = 'overview' | 'create' | 'edit' | 'session' | 'camera';
 type CalendarView = 'history' | 'schedule';
-type SetDraft = { id: string; weight: string; reps: string };
+type SetDraft = { id: string; weight: string; reps: string; verified: boolean; suggested?: RoutineSet };
 type SessionExercise = PlannedExercise & { instanceId: string; rows: SetDraft[] };
+type EditSet = { id: string; weight: string; reps: string; unit: 'lb' | 'kg' };
+type EditExercise = Omit<RoutineTemplateExercise, 'sets'> & { instanceId: string; sets: EditSet[] };
 const today = new Date();
 const exerciseCount = (count: number) => `${count} ${count === 1 ? 'exercise' : 'exercises'}`;
+const convertWeight = (weight: number, from: 'lb' | 'kg', to: 'lb' | 'kg') => from === to ? weight : Math.round((from === 'lb' ? weight / 2.20462 : weight * 2.20462) * 2) / 2;
+const validSet = (weight: string, reps: string) => weight.trim() !== '' && reps.trim() !== '' && Number.isFinite(Number(weight)) && Number(weight) >= 0 && Number.isInteger(Number(reps)) && Number(reps) >= 1;
 
 function NavIcon({ name }: { name: Tab }) {
   if (name === 'workout') return <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M3 9v6m3-9v12m3-9v6m6-6v6m3-9v12m3-9v6M3 12h18" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" /></svg>;
@@ -36,6 +40,10 @@ function App() {
   const [showExercisePicker, setShowExercisePicker] = useState(false);
   const [sessionError, setSessionError] = useState('');
   const [routineName, setRoutineName] = useState('');
+  const [editingRoutineId, setEditingRoutineId] = useState<string | null>(null);
+  const [editExercises, setEditExercises] = useState<EditExercise[]>([]);
+  const [editPickerOpen, setEditPickerOpen] = useState(false);
+  const [editError, setEditError] = useState('');
   const [selectedDay, setSelectedDay] = useState(today.getDay());
   const [search, setSearch] = useState('');
   const [customName, setCustomName] = useState('');
@@ -68,13 +76,15 @@ function App() {
   }
 
   function startWorkout(routineId: string) {
+    const routine = savedRoutines.find(item => item.id === routineId);
+    const previous = routine?.template ?? [];
     setActiveRoutineId(routineId);
     setActiveSessionId(`session-${Date.now()}`);
     setSessionStartedAt(Date.now());
     setElapsedSeconds(0);
     setCameraSetsInSession(0);
-    setSessionExercises([]);
-    setShowExercisePicker(true);
+    setSessionExercises(previous.map((exercise, index) => ({ id: exercise.id, name: exercise.name, analyzed: exercise.analyzed, sets: 0, reps: '', instanceId: `previous-${index}-${Date.now()}`, rows: exercise.sets.length ? exercise.sets.map((set, setIndex) => ({ id: `previous-set-${index}-${setIndex}-${Date.now()}`, weight: '', reps: '', verified: false, suggested: set })) : [{ id: `new-set-${index}-${Date.now()}`, weight: '', reps: '', verified: false }] })));
+    setShowExercisePicker(previous.length === 0);
     setSessionError('');
     setWorkoutView('session');
     window.scrollTo(0, 0);
@@ -82,9 +92,8 @@ function App() {
 
   function finishWorkout() {
     const rows = sessionExercises.flatMap(exercise => exercise.rows.map(row => ({ exercise, row })));
-    const partial = rows.some(({ row }) => (row.weight.trim() && !row.reps.trim()) || (!row.weight.trim() && row.reps.trim()));
-    if (partial) { setSessionError('Complete both weight and reps for each set, or leave the row blank.'); return; }
-    const completed = rows.filter(({ row }) => row.weight.trim() && row.reps.trim());
+    if (rows.some(({ row }) => !row.verified && (row.weight.trim() || row.reps.trim()))) { setSessionError('Check each entered set to verify it before finishing. Unused previous sets can stay faded.'); return; }
+    const completed = rows.filter(({ row }) => row.verified);
     const invalid = completed.some(({ row }) => !Number.isFinite(Number(row.weight)) || Number(row.weight) < 0 || !Number.isInteger(Number(row.reps)) || Number(row.reps) < 1);
     if (invalid) { setSessionError('Use a valid weight and at least one rep for each completed set.'); return; }
     if (completed.length) {
@@ -93,6 +102,7 @@ function App() {
         const entries = completed.map(({ exercise, row }) => ({ exerciseId: exercise.id, exerciseName: exercise.name, weight: Number(row.weight), unit, reps: Number(row.reps), recordedAt: new Date().toISOString(), sessionId: activeSessionId ?? undefined }));
         return { ...current, [todayKey]: { ...previous, completed: [...new Set([...previous.completed, ...completed.map(({ exercise }) => exercise.name)])], entries: [...(previous.entries ?? []), ...entries] } };
       });
+      setSavedRoutines(current => current.map(routine => routine.id === activeRoutineId ? { ...routine, template: sessionExercises.map(exercise => ({ id: exercise.id, name: exercise.name, analyzed: exercise.analyzed, sets: exercise.rows.flatMap(row => row.verified ? [{ weight: Number(row.weight), reps: Number(row.reps), unit }] : row.suggested ? [row.suggested] : []) })).filter(exercise => exercise.sets.length > 0) } : routine));
     }
     setSessionStartedAt(null);
     setActiveRoutineId(null);
@@ -106,6 +116,42 @@ function App() {
     if (!name) return;
     setSavedRoutines(current => [...current, { id: `routine-${Date.now()}`, name, exercises: [] }]);
     setRoutineName('');
+    setWorkoutView('overview');
+    window.scrollTo(0, 0);
+  }
+
+  function openRoutineEditor(routine: SavedRoutine) {
+    setEditingRoutineId(routine.id);
+    setRoutineName(routine.name);
+    const source = routine.template ?? routine.exercises.map(exercise => ({ id: exercise.id, name: exercise.name, analyzed: exercise.analyzed, sets: [] }));
+    setEditExercises(source.map((exercise, index) => ({ id: exercise.id, name: exercise.name, analyzed: exercise.analyzed, instanceId: `edit-${index}-${Date.now()}`, sets: exercise.sets.map((set, setIndex) => ({ id: `edit-set-${index}-${setIndex}-${Date.now()}`, weight: String(convertWeight(set.weight, set.unit, unit)), reps: String(set.reps), unit })) })));
+    setEditPickerOpen(false);
+    setEditError('');
+    setWorkoutView('edit');
+    window.scrollTo(0, 0);
+  }
+
+  function addEditExercise(exercise: PlannedExercise) {
+    setEditExercises(current => [...current, { id: exercise.id, name: exercise.name, analyzed: exercise.analyzed, instanceId: `edit-${Date.now()}-${Math.random()}`, sets: [{ id: `edit-set-${Date.now()}`, weight: '', reps: '', unit }] }]);
+    setEditPickerOpen(false);
+    setSearch('');
+    setCustomName('');
+  }
+
+  function updateEditSet(exerciseId: string, setId: string, field: 'weight' | 'reps', value: string) {
+    setEditExercises(current => current.map(exercise => exercise.instanceId === exerciseId ? { ...exercise, sets: exercise.sets.map(set => set.id === setId ? { ...set, [field]: value } : set) } : exercise));
+    setEditError('');
+  }
+
+  function saveRoutineEdits(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const name = routineName.trim();
+    if (!name || !editingRoutineId) return;
+    if (editExercises.some(exercise => exercise.sets.some(set => (set.weight.trim() || set.reps.trim()) && !validSet(set.weight, set.reps)))) { setEditError('Each suggested set needs a valid weight and rep count, or leave it blank.'); return; }
+    const template: RoutineTemplateExercise[] = editExercises.map(exercise => ({ id: exercise.id, name: exercise.name, analyzed: exercise.analyzed, sets: exercise.sets.filter(set => validSet(set.weight, set.reps)).map(set => ({ weight: Number(set.weight), reps: Number(set.reps), unit: set.unit })) }));
+    setSavedRoutines(current => current.map(routine => routine.id === editingRoutineId ? { ...routine, name, template } : routine));
+    setRoutineName('');
+    setEditingRoutineId(null);
     setWorkoutView('overview');
     window.scrollTo(0, 0);
   }
@@ -124,7 +170,7 @@ function App() {
   }
 
   function addSessionExercise(exercise: PlannedExercise) {
-    setSessionExercises(current => [...current, { ...exercise, instanceId: `exercise-${Date.now()}-${Math.random()}`, rows: [{ id: `set-${Date.now()}`, weight: '', reps: '' }] }]);
+    setSessionExercises(current => [...current, { ...exercise, instanceId: `exercise-${Date.now()}-${Math.random()}`, rows: [{ id: `set-${Date.now()}`, weight: '', reps: '', verified: false }] }]);
     setShowExercisePicker(false);
     setSearch('');
     setCustomName('');
@@ -135,12 +181,37 @@ function App() {
   }
 
   function updateSet(exerciseId: string, rowId: string, field: 'weight' | 'reps', value: string) {
-    setSessionExercises(current => current.map(exercise => exercise.instanceId === exerciseId ? { ...exercise, rows: exercise.rows.map(row => row.id === rowId ? { ...row, [field]: value } : row) } : exercise));
+    setSessionExercises(current => current.map(exercise => exercise.instanceId === exerciseId ? { ...exercise, rows: exercise.rows.map(row => row.id === rowId ? { ...row, [field]: value, verified: false } : row) } : exercise));
     setSessionError('');
   }
 
   function addSet(exerciseId: string) {
-    setSessionExercises(current => current.map(exercise => exercise.instanceId === exerciseId ? { ...exercise, rows: [...exercise.rows, { id: `set-${Date.now()}-${Math.random()}`, weight: '', reps: '' }] } : exercise));
+    setSessionExercises(current => current.map(exercise => exercise.instanceId === exerciseId ? { ...exercise, rows: [...exercise.rows, { id: `set-${Date.now()}-${Math.random()}`, weight: '', reps: '', verified: false }] } : exercise));
+  }
+
+  function confirmSet(exerciseId: string, rowId: string) {
+    const row = sessionExercises.find(exercise => exercise.instanceId === exerciseId)?.rows.find(item => item.id === rowId);
+    if (!row) return;
+    if (row.verified) {
+      setSessionExercises(current => current.map(exercise => exercise.instanceId === exerciseId ? { ...exercise, rows: exercise.rows.map(item => item.id === rowId ? { ...item, verified: false } : item) } : exercise));
+      return;
+    }
+    const weight = row.weight.trim() || (row.suggested ? String(convertWeight(row.suggested.weight, row.suggested.unit, unit)) : '');
+    const reps = row.reps.trim() || (row.suggested ? String(row.suggested.reps) : '');
+    if (!validSet(weight, reps)) { setSessionError('Enter a valid weight and rep count, then check the set.'); return; }
+    setSessionExercises(current => current.map(exercise => exercise.instanceId === exerciseId ? { ...exercise, rows: exercise.rows.map(item => item.id === rowId ? { ...item, weight, reps, verified: true } : item) } : exercise));
+    setSessionError('');
+  }
+
+  function usePreviousSet(exerciseId: string, rowId: string) {
+    setSessionExercises(current => current.map(exercise => exercise.instanceId === exerciseId ? { ...exercise, rows: exercise.rows.map(row => row.id === rowId && row.suggested ? { ...row, weight: String(convertWeight(row.suggested.weight, row.suggested.unit, unit)), reps: String(row.suggested.reps), verified: true } : row) } : exercise));
+    setSessionError('');
+  }
+
+  function changeUnit(next: 'lb' | 'kg') {
+    if (next === unit) return;
+    setSessionExercises(current => current.map(exercise => ({ ...exercise, rows: exercise.rows.map(row => ({ ...row, weight: row.weight.trim() ? String(convertWeight(Number(row.weight), unit, next)) : '' })) })));
+    setUnit(next);
   }
 
   function completeAnalyzedSet(analysis: SetAnalysis) {
@@ -154,7 +225,7 @@ function App() {
       setSessionExercises(current => current.map(exercise => {
         if (exercise.instanceId !== cameraDraftKey) return exercise;
         const blankIndex = exercise.rows.findIndex(row => !row.reps);
-        const rows = blankIndex >= 0 ? exercise.rows.map((row, index) => index === blankIndex ? { ...row, reps: String(analysis.reps.length) } : row) : [...exercise.rows, { id: `set-${Date.now()}`, weight: '', reps: String(analysis.reps.length) }];
+        const rows = blankIndex >= 0 ? exercise.rows.map((row, index) => index === blankIndex ? { ...row, reps: String(analysis.reps.length), verified: false } : row) : [...exercise.rows, { id: `set-${Date.now()}`, weight: '', reps: String(analysis.reps.length), verified: false }];
         return { ...exercise, rows };
       }));
     }
@@ -173,22 +244,27 @@ function App() {
           <div className="content-stack workout-overview routine-list">
             {savedRoutines.map(routine => <section className="surface routine-card" key={routine.id}>
               <div className="routine-icon saved" aria-hidden="true">L</div>
-              <div className="routine-body"><span className="eyebrow">SAVED ROUTINE</span><h2>{routine.name}</h2><p>Build each session from the exercise library.</p><button className="primary-button" onClick={() => startWorkout(routine.id)}>Start routine</button></div>
+              <div className="routine-body"><span className="eyebrow">SAVED ROUTINE</span><h2>{routine.name}</h2><p>{routine.template?.length ? `${exerciseCount(routine.template.length)} · Previous sets ready to verify` : 'Build each session from the exercise library.'}</p><div className="routine-actions"><button className="primary-button" onClick={() => startWorkout(routine.id)}>Start routine</button><button className="secondary-button" onClick={() => openRoutineEditor(routine)}>Edit routine</button></div></div>
             </section>)}
             <button className={`new-workout-button ${savedRoutines.length ? 'compact-create' : ''}`} onClick={() => { setWorkoutView('create'); window.scrollTo(0, 0); }}><span className="new-workout-plus" aria-hidden="true">+</span><strong>Create new routine</strong><small>Name it now, add exercises during your workout</small></button>
           </div>
         </>}
         {workoutView === 'create' && <><div className="page-heading"><button className="back-link" onClick={() => setWorkoutView('overview')}>← Routines</button><span className="eyebrow">YOUR TRAINING</span><h1>New routine</h1><p>Give your routine a name. It starts empty, ready for your exercises.</p></div><div className="content-stack finish-stack"><section className="surface save-routine-card"><form onSubmit={createRoutine}><label>Routine name<input value={routineName} onChange={event => setRoutineName(event.target.value)} placeholder="e.g. Push day" required autoFocus /></label><button className="primary-button" type="submit">Create routine</button></form></section></div></>}
+        {workoutView === 'edit' && <><div className="page-heading"><button className="back-link" onClick={() => { setEditingRoutineId(null); setRoutineName(''); setWorkoutView('overview'); }}>← Routines</button><span className="eyebrow">SAVED ROUTINE</span><h1>Edit routine</h1><p>Suggested weights are shown in {unit}. Past workout logs will not change.</p></div><div className="content-stack session-stack edit-stack"><form id="edit-routine-form" className="surface edit-routine-form" onSubmit={saveRoutineEdits}><label>Routine name<input value={routineName} onChange={event => setRoutineName(event.target.value)} required /></label>{editError && <p className="edit-error" role="alert">{editError}</p>}<button className="primary-button" type="submit">Save changes</button></form>
+          {editExercises.map((exercise, index) => <section className="surface session-exercise" key={exercise.instanceId}><div className="exercise-card-heading"><ExerciseThumb id={exercise.id} name={exercise.name} /><div><span className="eyebrow">EXERCISE {String(index + 1).padStart(2, '0')}</span><h2>{exercise.name}</h2></div><button className="remove-exercise" onClick={() => setEditExercises(current => current.filter(item => item.instanceId !== exercise.instanceId))} aria-label={`Remove ${exercise.name}`}>×</button></div><div className="set-table-head edit-set-head"><span>SET</span><span>WEIGHT</span><span>REPS</span><span /></div>{exercise.sets.map((set, setIndex) => <div className="edit-set-row" key={set.id}><span className="set-number">{setIndex + 1}</span><input type="number" min="0" step="0.5" inputMode="decimal" value={set.weight} onChange={event => updateEditSet(exercise.instanceId, set.id, 'weight', event.target.value)} aria-label={`${exercise.name} suggested set ${setIndex + 1} weight`} /><input type="number" min="1" step="1" inputMode="numeric" value={set.reps} onChange={event => updateEditSet(exercise.instanceId, set.id, 'reps', event.target.value)} aria-label={`${exercise.name} suggested set ${setIndex + 1} reps`} /><button type="button" onClick={() => setEditExercises(current => current.map(item => item.instanceId === exercise.instanceId ? { ...item, sets: item.sets.filter(row => row.id !== set.id) } : item))} aria-label={`Remove ${exercise.name} suggested set ${setIndex + 1}`}>×</button></div>)}<button className="add-set-button" onClick={() => setEditExercises(current => current.map(item => item.instanceId === exercise.instanceId ? { ...item, sets: [...item.sets, { id: `edit-set-${Date.now()}`, weight: '', reps: '', unit }] } : item))}>+ Add suggested set</button></section>)}
+          {!editPickerOpen && <button className="add-more-button" onClick={() => setEditPickerOpen(true)}>+ Add exercise to routine</button>}
+          {editPickerOpen && <section className="surface free-picker"><div className="picker-heading"><div><span className="eyebrow">EXERCISE LIBRARY</span><h2>Choose an exercise</h2></div><button className="picker-close" onClick={() => setEditPickerOpen(false)} aria-label="Close exercise library">×</button></div><input value={search} onChange={event => setSearch(event.target.value)} placeholder="Search all exercises…" aria-label="Search exercises" /><div className="free-exercise-options">{filteredExercises.map(exercise => <button key={exercise.id} onClick={() => addEditExercise({ id: exercise.id, name: exercise.name, sets: 0, reps: '', analyzed: exercise.analyzed })}><ExerciseThumb id={exercise.id} name={exercise.name} /><span className="library-name"><strong>{exercise.name}</strong><small>{exercise.category}</small></span><b>+</b></button>)}</div><div className="custom-row"><input value={customName} onChange={event => setCustomName(event.target.value)} placeholder="Custom exercise" aria-label="Custom exercise name" /><button onClick={() => customName.trim() && addEditExercise({ id: `custom-${Date.now()}`, name: customName.trim(), sets: 0, reps: '' })} disabled={!customName.trim()}>Add</button></div></section>}
+        </div></>}
         {workoutView === 'session' && <>
-          <div className="page-heading session-heading"><span className="eyebrow">WORKOUT IN PROGRESS</span><h1>{sessionName}</h1><p>{sessionExercises.length ? `${exerciseCount(sessionExercises.length)} added` : 'Start by adding an exercise.'}{cameraSetsInSession > 0 ? ` · ${cameraSetsInSession} camera ${cameraSetsInSession === 1 ? 'analysis' : 'analyses'}` : ''}</p><div className="unit-control"><span>Weight unit</span><button className={unit === 'lb' ? 'selected' : ''} onClick={() => setUnit('lb')}>lb</button><button className={unit === 'kg' ? 'selected' : ''} onClick={() => setUnit('kg')}>kg</button></div></div>
+          <div className="page-heading session-heading"><span className="eyebrow">WORKOUT IN PROGRESS</span><h1>{sessionName}</h1><p>{sessionExercises.length ? `${exerciseCount(sessionExercises.length)} added` : 'Start by adding an exercise.'}{cameraSetsInSession > 0 ? ` · ${cameraSetsInSession} camera ${cameraSetsInSession === 1 ? 'analysis' : 'analyses'}` : ''}</p><div className="unit-control"><span>Weight unit</span><button className={unit === 'lb' ? 'selected' : ''} onClick={() => changeUnit('lb')}>lb</button><button className={unit === 'kg' ? 'selected' : ''} onClick={() => changeUnit('kg')}>kg</button></div></div>
           <div className="content-stack session-stack live-session">
             {!showExercisePicker && <button className="add-more-button" onClick={() => setShowExercisePicker(true)}>+ Add exercise</button>}
             {showExercisePicker && <section className="surface free-picker"><div className="picker-heading"><div><span className="eyebrow">EXERCISE LIBRARY</span><h2>Choose an exercise</h2></div><button className="picker-close" onClick={() => setShowExercisePicker(false)} aria-label="Close exercise library">×</button></div><input value={search} onChange={event => setSearch(event.target.value)} placeholder="Search all exercises…" aria-label="Search exercises" /><div className="free-exercise-options">{filteredExercises.map(exercise => <button key={exercise.id} onClick={() => addSessionExercise({ id: exercise.id, name: exercise.name, sets: 0, reps: '', analyzed: exercise.analyzed })}><ExerciseThumb id={exercise.id} name={exercise.name} /><span className="library-name"><strong>{exercise.name}</strong><small>{exercise.category}</small></span><b>+</b></button>)}{filteredExercises.length === 0 && <p className="empty-small">No matching exercises. Try another search or add your own below.</p>}</div><div className="custom-row"><input value={customName} onChange={event => setCustomName(event.target.value)} placeholder="Custom exercise" aria-label="Custom exercise name" /><button onClick={() => customName.trim() && addSessionExercise({ id: `custom-${Date.now()}`, name: customName.trim(), sets: 0, reps: '' })} disabled={!customName.trim()}>Add</button></div></section>}
             {sessionExercises.map((exercise, index) => {
               return <section className="surface session-exercise" key={exercise.instanceId}>
                 <div className="exercise-card-heading"><ExerciseThumb id={exercise.id} name={exercise.name} /><div><span className="eyebrow">EXERCISE {String(index + 1).padStart(2, '0')}</span><h2>{exercise.name}</h2></div><button className="remove-exercise" onClick={() => setSessionExercises(current => current.filter(item => item.instanceId !== exercise.instanceId))} aria-label={`Remove ${exercise.name}`}>×</button></div>
-                <div className="set-table-head"><span>SET</span><span>WEIGHT ({unit})</span><span>REPS</span></div>
-                <div className="set-rows">{exercise.rows.map((row, rowIndex) => <div className="set-row" key={row.id}><span className="set-number">{rowIndex + 1}</span><input type="number" inputMode="decimal" min="0" step="0.5" placeholder="—" value={row.weight} onChange={event => updateSet(exercise.instanceId, row.id, 'weight', event.target.value)} aria-label={`${exercise.name} set ${rowIndex + 1} weight in ${unit}`} /><input type="number" inputMode="numeric" min="1" step="1" placeholder="—" value={row.reps} onChange={event => updateSet(exercise.instanceId, row.id, 'reps', event.target.value)} aria-label={`${exercise.name} set ${rowIndex + 1} reps`} /></div>)}</div>
+                <div className="set-table-head"><span>SET</span><span>WEIGHT ({unit})</span><span>REPS</span><span>DONE</span></div>
+                <div className="set-rows">{exercise.rows.map((row, rowIndex) => <div className={`set-row ${row.verified ? 'is-verified' : 'is-ghost'}`} key={row.id}><span className="set-number">{rowIndex + 1}</span><input type="number" inputMode="decimal" min="0" step="0.5" placeholder={row.suggested ? String(convertWeight(row.suggested.weight, row.suggested.unit, unit)) : '—'} value={row.weight} onChange={event => updateSet(exercise.instanceId, row.id, 'weight', event.target.value)} aria-label={`${exercise.name} set ${rowIndex + 1} weight in ${unit}`} /><input type="number" inputMode="numeric" min="1" step="1" placeholder={row.suggested ? String(row.suggested.reps) : '—'} value={row.reps} onChange={event => updateSet(exercise.instanceId, row.id, 'reps', event.target.value)} aria-label={`${exercise.name} set ${rowIndex + 1} reps`} /><button className="verify-set" onClick={() => confirmSet(exercise.instanceId, row.id)} aria-label={`${row.verified ? 'Uncheck' : 'Check'} ${exercise.name} set ${rowIndex + 1}`} aria-pressed={row.verified}>✓</button>{row.suggested && <button className="previous-set" onClick={() => usePreviousSet(exercise.instanceId, row.id)} disabled={row.verified}>Previous: {row.suggested.weight} {row.suggested.unit} × {row.suggested.reps} reps · tap to use</button>}</div>)}</div>
                 <button className="add-set-button" onClick={() => addSet(exercise.instanceId)}>+ Add set</button>
                 {exercise.analyzed && <button className="text-button camera-option" onClick={() => openCamera('session', exercise.instanceId)}>Use LiftCam vision for this set →</button>}
               </section>;
