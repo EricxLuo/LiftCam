@@ -1,6 +1,6 @@
 # Connect LiftCam to AWS
 
-LiftCam has two AWS pieces: Amplify hosts the React app; Lambda calls Bedrock for the post-set coach. You do **not** need to create or paste an AWS API key into the frontend. Lambda uses its IAM execution role.
+LiftCam has two AWS pieces: Amplify hosts the React app; Lambda calls Bedrock for the post-set coach and in-workout chat. You do **not** need to create or paste an AWS API key into the frontend. Lambda uses its IAM execution role. The first-run name screen is a local browser profile, not a secure AWS login.
 
 ## 1. Publish the app with Amplify
 
@@ -63,6 +63,15 @@ Invoke-RestMethod -Method Post -Uri 'https://YOUR_FUNCTION_URL/' -ContentType 'a
 
 Success returns JSON with a `summary` field. Then complete a squat set in the deployed LiftCam app. The result should be labeled **AI coach · AWS Bedrock** and read aloud. **Local coach preview** means the API URL was not configured or the request failed.
 
+The same URL also handles workout chat. Test it with a separate request:
+
+```powershell
+$liftcamChat = @{ mode = 'chat'; question = 'How should I approach my next set?'; context = @(@{ name = 'Barbell Squat'; current = @(@{ weight = 135; reps = 8; unit = 'lb' }); previous = @(@{ weight = 125; reps = 8; unit = 'lb' }) }) } | ConvertTo-Json -Depth 6
+Invoke-RestMethod -Method Post -Uri 'https://YOUR_FUNCTION_URL/' -ContentType 'application/json' -Body $liftcamChat
+```
+
+This should also return a `summary`. In the app, an open chat shows **AWS endpoint configured** when its URL is set. If the request fails, the chat explicitly falls back to limited local replies. Redeploy the latest `api/index.mjs` Lambda package before testing chat.
+
 If it fails:
 
 - `403` from the Function URL: check its authorization and resource policy.
@@ -70,4 +79,4 @@ If it fails:
 - Browser CORS error: make sure the Amplify origin matches the Function URL CORS configuration and `ALLOWED_ORIGIN`.
 - Local coaching preview with no Network request: check `VITE_COACH_API_URL` in Amplify and redeploy.
 
-The weekly plan, routine names, workout log, and calendar remain in browser local storage. Raw camera frames are never sent to Lambda; only numeric rep measurements are included in the coach request.
+The local profile, weekly plan, routines, workout log, and calendar remain in browser local storage. Raw camera frames are never sent to Lambda. Post-set coaching sends numeric rep measurements; chat sends the question, exercise names, and current/previous numeric set data, but not the profile name.

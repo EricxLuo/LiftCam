@@ -1,17 +1,19 @@
 # LiftCam
 
-LiftCam is a mobile-first workout tracker with optional camera rep timing, a post-set voice coach, and a consistency calendar. Its bottom navigation has Workout, Calendar, and Profile tabs. Workout starts with no routines; the repeating weekly schedule lives in Calendar.
+LiftCam is a mobile-first workout tracker with optional camera rep timing, a post-set voice coach, in-workout chat, and a consistency calendar. Its bottom navigation has Workout, Calendar, and Profile tabs. A fresh browser starts with local-profile setup and no routines or workout history; the repeating weekly schedule lives in Calendar.
 
 ## What works in this MVP
 
 - Plan exercises from Monday through Sunday in Calendar, including custom exercises.
 - Create named routines. A new routine starts with an empty session; search the exercise library, add exercise cards, and add as many weight/reps rows as you need. A running timer and Finish button float above the bottom tabs. Logged days appear on the calendar.
+- Browse exercises by body area, with an illustration beside each one. Add Exercise appears below the last exercise card. After finishing a logged workout, a brief congratulations screen leads to the training calendar.
 - After a routine has a completed workout, its previous exercises and sets appear as faded suggestions next time. Tap the check beside a set to reuse its previous values, or enter new weight and reps and then check to verify them. Only checked sets are logged. Edit routine changes its name and future set suggestions without changing earlier workout logs.
 - Analyze supported side-view movements using MediaPipe Pose Landmarker in the browser.
 - Count completed reps, show effort-phase time per rep, and flag substantial late-set slowdown.
 - Hear a local coaching preview, or connect AWS Bedrock for generated coaching.
+- Open the mini chat above the workout timer to ask about confirmed current sets, previous routine sets, and general training. Without AWS, chat offers limited local replies; open-ended AI answers require the configured Bedrock endpoint.
 - Optionally use LiftCam vision during a supported exercise; its detected rep count fills a set row when you return.
-- See local activity totals and a plain-language privacy summary in Profile, with no account required.
+- Enter a name and training focus on first launch, then see and edit them alongside local activity totals in Profile. This is **not** a secure login or cloud account.
 
 Camera analysis is available for squats, lunges, leg press, deadlifts, presses, rows, pulldowns, pull-ups, push-ups, and curls. It tracks a visible knee, hip, or elbow angle with a simple repetition heuristic; the other exercises are manually logged. Camera position and occlusion can make counts inaccurate. A slowdown is an observable clue, not proof of failure or a precise estimate of reps in reserve. The rep counter has not yet been benchmarked against labeled gym videos.
 
@@ -57,5 +59,5 @@ Expect JSON containing a `summary` string. Then open LiftCam, complete a squat s
 
 - Raw camera frames stay in the browser and are not uploaded.
 - The weekly plan, saved routine suggestions, set log, and calendar are saved in this browser's local storage. Clearing browser data erases them; there is no cross-device sync. A new routine starts empty; after its first logged workout, the last confirmed sets are offered as unverified suggestions in the next session. Older logs created before routine-linked suggestions cannot be reliably matched to a routine.
-- Only numeric set measurements are sent to the coach endpoint when configured.
+- Chat sends your question, exercise names, and current/previous numeric set data to your configured AWS endpoint. Post-set coaching sends rep measurements. The profile name and camera video are not sent.
 - This is an early prototype. Test rep count and slowdown heuristics with manually labeled sets before claiming accuracy in a resume or using the feedback to guide training decisions.
